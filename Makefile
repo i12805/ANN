@@ -36,7 +36,7 @@ bin/%.elf: %.c
 
 bin/%.s: %.c
 	@echo "CC $<"
-	@$e-gcc $(CFLAGS) -T $(ELDF) $(INCLUDES) -fverbose-asm -S $< -o $@ $(LIBS) $(E_LIBS) $(E_LIB_NAMES)
+	@e-gcc $(CFLAGS) -T $(ELDF) $(INCLUDES) -fverbose-asm -S $< -o $@ $(LIBS) $(E_LIBS) $(E_LIB_NAMES)
 
 bin/%.srec: bin/%.elf
 	@e-objcopy --srec-forceS3 --output-target srec $< $@
@@ -45,6 +45,15 @@ bin/%.srec: bin/%.elf
 ##############################################
 
 cannon: bin bin/host_cannon bin/e_cannon.elf common.h
+
+##############################################
+
+
+
+ann_main: ann_main.c ann_matrix_ops.c ann_matrix_ops.h Thetas.h
+	@echo "CC $<"
+	gcc $< ann_matrix_ops.c -o $@ -Wall -g -fopenmp -lm -I.
+
 
 
 clean:

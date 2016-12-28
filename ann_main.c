@@ -4,6 +4,7 @@
 #include <string.h>
 #include <math.h>
 #include "ann_matrix_ops.h"
+#include "Thetas.h"
 
 #define REMAP_PIXEL(p) {(((2.0*(p - 0))/255)-1)}
 
@@ -17,13 +18,14 @@ void add_bias_column_to_matrix(float **src_matrix, int rows, int cols, float **d
 
 int main (int argc, char *argv[])
 {
-   float **a, **b, **c, **biasedMatrix;
+   float **a, **c, ***pTheta2;
    char **cc;
    char errorMsg[80];
    FILE *pFile;
    char *fileName = "kur";
    int csvRows, csvCols, i, j, status;
-
+   pTheta2 = (float***)(&Theta2);
+   
    if(argc < 2)
    {
        printf("Give me an input file.\n");
@@ -31,13 +33,12 @@ int main (int argc, char *argv[])
    }
 
    fileName = argv[1];
-//   dataBuffer = (char *)malloc(csvRows*csvCols*sizeof(float));
-//   allocate_matrix(&a, csvRows, csvCols);
 
+   printf("Reading file '%s' ...", fileName);
    pFile = fopen(fileName, "r");
    if(pFile == NULL)
    {
-      sprintf(errorMsg, "Can't open file: '%s'", fileName);
+      sprintf(errorMsg, "\n\nCan't open file: '%s'\n", fileName);
       perror(errorMsg);
       exit(-1);
    }
@@ -48,7 +49,7 @@ int main (int argc, char *argv[])
    }	
    fclose(pFile);
 
-   printf("Print matrix as float (%dx%d).\n", csvRows, csvCols);
+   printf("OK.\nPrinting content matrix as float (%dx%d).\n", csvRows, csvCols);
    print_matrix(c, csvRows, csvCols);
 /*
    printf("Print matrix as char (%dx%d).\n", csvRows, csvCols);
@@ -56,6 +57,7 @@ int main (int argc, char *argv[])
 */
    allocate_matrix(&a, csvRows, csvCols);
 
+   printf("Scaling pixel data to [-1, 1] ... ");
    for(i = 0; i < csvRows; i++)
    {
        for(j = 0; j < csvCols; j++)
@@ -64,28 +66,55 @@ int main (int argc, char *argv[])
        }
    }
    
-   printf("Print remapped matrix [-1;1] (%dx%d).\n", csvRows, csvCols);
+   printf("OK.\nPrint remapped/scaled matrix [-1;1] (%dx%d).\n", csvRows, csvCols);
    print_matrix(a, csvRows, csvCols);
    
-   allocate_matrix(&b, csvRows, csvCols);
+   printf("Transpose matrix A.\n");
+   float **transposedMatrix;
+   allocate_matrix_floats(&transposedMatrix, csvCols, csvRows);
+   transpose_matrix(a, csvRows, csvCols, transposedMatrix);   
+   print_matrix(transposedMatrix, csvCols, csvRows);
 
-   printf("Sigmoid on matrix A.\n");
-   sigmoid_matrix(a, csvRows, csvCols, b);
-   print_matrix(b, csvRows, csvCols);
+   printf("Multiplying A*A'.\n");
+   float **productMatrix;
+   allocate_matrix_floats(&productMatrix, csvRows, csvRows);
   
-   printf("Transposed matrix A.\n");
-   transpose_matrix(a, csvRows, csvCols, b);   
-   print_matrix(b, csvCols, csvRows);
-      
-   printf("Biased matrix A.\n");
-   allocate_matrix(&biasedMatrix, csvRows, csvCols+1);
-   add_bias_column_to_matrix(a, csvRows, csvCols, biasedMatrix);   
-   print_matrix(biasedMatrix, csvRows, csvCols+1);
+   status = ALG_MATMUL2D(csvRows, csvRows, csvCols, a, transposedMatrix, productMatrix);
+   printf("Multiplication a.a' status: %d.\n", status);
+   print_matrix(productMatrix, csvRows, csvRows);
 
+/* clean transposedMatrix Memory */
    
- //  deallocate_matrix(&a, csvRows, csvCols);
- //  deallocate_matrix(&b, csvRows, csvCols);
- //  deallocate_matrix(&biasedMatrix, csvRows, csvCols+1);
+   printf("Dealocate productMatrix.");
+   deallocate_matrix_floats(&productMatrix, csvRows);
+   printf(" Done.\n");
+   printf("Dealocate transposedMatrix.");
+   deallocate_matrix_floats(&transposedMatrix, csvCols);
+   printf(" Done.\n");
+/* TODO to pass the matrix; address to deallocate function */
+   //printf("Dealocate a.");
+   //deallocate_matrix_floats(&a, csvRows);
+   //printf(" Done.\n");
+   //printf("Dealocate c.");
+   //deallocate_matrix_floats(&c, csvRows);
+   //printf(" Done.\n");
+
+   printf("Print Theta2.\n");
+
+   for(i=0; i < 2; i++)
+   {
+       
+       for(j=0; j < 26; j++)
+       {
+           printf("%f ", Theta2[i][j]);
+       }
+       putchar('\n');
+   }
+
+   printf("Predict BEGIN ... ");
+//   status = predict(Theta1, 25, 3841, Theta2, 2, 26, testFace, 1, 3840);
+   printf("Predict status: %d.\n", status);
+
    return 0;
 }
 
@@ -158,37 +187,75 @@ void add_bias_column_to_matrix(float **src_matrix, int rows, int cols, float **d
      PREDICT(Theta1, Theta2, X) outputs the predicted label of X given the
      trained weights of a neural network (Theta1, Theta2)
 
-     \param[in] mTheta1 a pointer to the 2D matrix of Theta1 coeficients;
-     \param[in] mTheta2 a pointer to the 2D matrix of Theta2 coeficients;
-     \param[in] mX      a pointer to the 2D matrix of input coeficients;
+     \param[in] mTheta1 a pointer to the 2D matrix of layer 1 weigth (Theta1) coeficients;
+     \param[in] mTheta2 a pointer to the 2D matrix of layer 2 weigth (Theta2) coeficients;
+     \param[in] mX      a pointer to the 2D matrix of input (pixel) values;
      \return the predicted label (1,2,3, etc.)
 */
 int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, int Theta2Rows, int Theta2Cols, float **mX, int XRows, int XCols)
 {
    float **biasedMatrix, **tempMatrix;
-   float **resultMatrix;
+   float **h1Matrix, **h2Matrix;
    int status = 1;
 
-   allocate_matrix(&tempMatrix, XCols, XRows);
-   allocate_matrix(&resultMatrix, XRows, Theta1Cols);
-   allocate_matrix(&biasedMatrix, XRows, XCols+1);
+   /* allocate memoty for transposed Theta1, biased X and result h1 */
+   allocate_matrix_floats(&tempMatrix, XCols, XRows); // holds transposed Theta1
+   allocate_matrix_floats(&h1Matrix, XRows, Theta1Cols); // holds h1
+   allocate_matrix_floats(&biasedMatrix, XRows, XCols+1);
    add_bias_column_to_matrix(mX, XRows, XCols, biasedMatrix);
    transpose_matrix(mTheta1, Theta1Rows, Theta1Cols, tempMatrix);
-   
+  
    if(((XCols+1) == Theta1Cols))
    {
        printf("X and Theta1' matrices OK - %dx%d * %dx%d.\n", XRows, XCols+1, Theta1Cols, Theta1Rows);
-       status = ALG_MATMUL2D(XRows, Theta1Rows, Theta1Cols, biasedMatrix, mTheta1, resultMatrix);
-       print_matrix(resultMatrix, XRows, Theta1Rows);
+       status = ALG_MATMUL2D(XRows, Theta1Rows, Theta1Cols, biasedMatrix, mTheta1, h1Matrix);
+       printf("Multipl result - (%dx%d).\n", XRows, Theta1Rows);
+       print_matrix(h1Matrix, XRows, Theta1Rows);
+       
+       printf("Sigmoid result - (%dx%d).\n", XRows, Theta1Rows);
+       sigmoid_matrix(h1Matrix, XRows, Theta1Rows, h1Matrix);
+       print_matrix(h1Matrix, XRows, Theta1Rows);
+       
    }
    else
    {
        printf("X and Theta1 not compatible for multiplication.\n"); 
    }
 
-   deallocate_matrix(&tempMatrix, XCols, XRows);
-   deallocate_matrix(&resultMatrix, XRows, Theta1Cols);
-   deallocate_matrix(&biasedMatrix, XRows, XCols+1);
+   deallocate_matrix_floats(&tempMatrix, XCols);
+   deallocate_matrix_floats(&biasedMatrix, XRows);
+
+   /****************************************/
+   
+   allocate_matrix_floats(&tempMatrix, Theta2Cols, Theta2Rows); // holds transposed Theta2
+   allocate_matrix_floats(&h2Matrix, XRows, Theta2Rows); // holds h2
+   allocate_matrix_floats(&biasedMatrix, XRows, Theta1Rows+1);
+   add_bias_column_to_matrix(h1Matrix, XRows, Theta1Rows, biasedMatrix);
+   transpose_matrix(mTheta2, Theta2Rows, Theta2Cols, tempMatrix);
+  
+   if((Theta1Rows+1) == Theta2Cols)
+   {
+       printf("h1 and Theta2' matrices OK - %dx%d * %dx%d.\n", XRows, Theta1Rows+1, Theta2Cols, Theta2Rows);
+       status = ALG_MATMUL2D(XRows, Theta2Rows, Theta2Cols, biasedMatrix, mTheta2, h2Matrix);
+       printf("Multipl result - (%dx%d).\n", XRows, Theta2Rows);
+       print_matrix(h1Matrix, XRows, Theta2Rows);
+       
+       printf("Sigmoid result - (%dx%d).\n", XRows, Theta2Rows);
+       sigmoid_matrix(h2Matrix, XRows, Theta2Rows, h2Matrix);
+       print_matrix(h2Matrix, XRows, Theta2Rows);
+       
+   }
+  else
+   {
+       printf("h1 and Theta2 not compatible for multiplication.\n"); 
+   }
+
+   deallocate_matrix_floats(&tempMatrix, XCols);
+   deallocate_matrix_floats(&biasedMatrix, XRows);
+   deallocate_matrix_floats(&h1Matrix, XRows);
+   deallocate_matrix_floats(&h2Matrix, XRows);
  
-  return status;
+   /* TODO find max value by columns to get classification */
+
+   return status;
 }
