@@ -100,9 +100,19 @@ void allocate_matrix_floats(float ***matrix, int rows, int cols)
 {
    int i;
    *matrix = (float **)malloc(rows*cols*sizeof(float));
+   if(*matrix == NULL)
+   {
+      printf("ERROR allocating memory for rows of a matrix %dx%d.\n", rows, cols);
+      exit(-1);
+   }
    for(i=0; i < rows; i++)
    {
        (*matrix)[i] = (float*)malloc(cols*sizeof(float));
+       if((*matrix)[i] == NULL)
+       { 
+            printf("ERROR allocating memory for cols of a matrix %dx%d.\n", rows, cols);
+            exit(-1);
+       }
    }
 }
 
@@ -144,7 +154,8 @@ void read_matrix(char *fileName, float ***subs, int *rows, int *cols)
    fread(rows, sizeof(int), 1, pFile);
    fread(cols, sizeof(int), 1, pFile);
    
-   allocate_matrix(subs, *rows, *cols);
+   //allocate_matrix(subs, *rows, *cols);
+   allocate_matrix_floats(subs, *rows, *cols);
    fread((*subs)[0], sizeof(float), ((*rows) * (*cols)), pFile);
    fclose(pFile);
 }
