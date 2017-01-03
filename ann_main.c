@@ -8,13 +8,18 @@
 
 #define REMAP_PIXEL(p) {(((2.0*(p - 0))/255)-1)}
 
-int M = 1000;
-int N = 2000;
-int P = 500;
+/* Configure ANN topology */
+#define INPUT_LAYER_SIZE (64*60)
+#define HIDDEN_LAYER_SIZE 25
+#define NUM_LABELS 2
+#define INPUT_EXAMPLES 42
 
+/* For debug purposes */
+#define DEBUG_ON 0
 
 void sigmoid_matrix(float**, int, int, float**);
 void add_bias_column_to_matrix(float **src_matrix, int rows, int cols, float **dest_matrix);
+int predict(float**, int, int, float**, int, int, float**, int, int);
 
 int main (int argc, char *argv[])
 {
@@ -32,67 +37,39 @@ int main (int argc, char *argv[])
    fileName = argv[1];
 
    //read_matrix_char(fileName, &cc, &csvRows, &csvCols);
-   read_matrix(fileName, &c, &csvRows, &csvCols);
+//   read_matrix(fileName, &c, &csvRows, &csvCols);
 	
-   printf("Printing content of the matrix as float (%dx%d).\n", csvRows, csvCols);
-   print_matrix(c, csvRows, csvCols);
+//   printf("Printing content of the matrix as float (%dx%d).\n", csvRows, csvCols);
+//   print_matrix(c, csvRows, csvCols);
 /*
    printf("Print matrix as char (%dx%d).\n", csvRows, csvCols);
    print_matrix_char(cc, csvRows, csvCols);
 */
-   allocate_matrix_floats(&a, csvRows, csvCols);
+//   allocate_matrix_floats(&a, csvRows, csvCols);
 
-   printf("Scaling pixel data to [-1, 1] ... ");
-   for(i = 0; i < csvRows; i++)
-   {
-       for(j = 0; j < csvCols; j++)
-       {
-	   a[i][j] = (float)REMAP_PIXEL(c[i][j]);
-       }
-   }
+//   printf("Scaling pixel data to [-1, 1] ... ");
+//   for(i = 0; i < csvRows; i++)
+//   {
+//       for(j = 0; j < csvCols; j++)
+//       {
+//	   a[i][j] = (float)REMAP_PIXEL(c[i][j]);
+//       }
+//   }
    
-   printf("OK.\nPrint remapped/scaled matrix [-1;1] (%dx%d).\n", csvRows, csvCols);
-   print_matrix(a, csvRows, csvCols);
+//   printf("OK.\nPrint remapped/scaled matrix [-1;1] (%dx%d).\n", csvRows, csvCols);
+//   print_matrix(a, csvRows, csvCols);
    
-   printf("Transpose matrix A.\n");
-   float **transposedMatrix;
-   allocate_matrix_floats(&transposedMatrix, csvCols, csvRows);
-   transpose_matrix(a, csvRows, csvCols, transposedMatrix);   
-   print_matrix(transposedMatrix, csvCols, csvRows);
-
-   printf("Multiplying A*A'.\n");
-   float **productMatrix;
-   allocate_matrix_floats(&productMatrix, csvRows, csvRows);
-  
-   status = ALG_MATMUL2D(csvRows, csvRows, csvCols, a, transposedMatrix, productMatrix);
-   printf("Multiplication A*A' status: %d.\n", status);
-   print_matrix(productMatrix, csvRows, csvRows);
-
-/* clean transposedMatrix Memory */
-   
-   printf("Dealocate productMatrix.");
-   deallocate_matrix_floats(&productMatrix, csvRows);
-   printf(" Done.\n");
-   printf("Dealocate transposedMatrix.");
-   deallocate_matrix_floats(&transposedMatrix, csvCols);
-   printf(" Done.\n");
-   printf("Dealocate a.");
-   deallocate_matrix_floats(&a, csvRows);
-   printf(" Done.\n");
-   //printf("Dealocate c.");
-   //deallocate_matrix_floats(&c, csvRows);
-   //printf(" Done.\n");
 
    float **Theta1Copy, **Theta2Copy, **testFaceCopy;
 
-   allocate_matrix_floats(&Theta1Copy, 25, 3841); 
-   allocate_matrix_floats(&Theta2Copy, 2, 26);
-   allocate_matrix_floats(&testFaceCopy, 28, 3840);
+   allocate_matrix_floats(&Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1); 
+   allocate_matrix_floats(&Theta2Copy, NUM_LABELS, HIDDEN_LAYER_SIZE+1);
+   allocate_matrix_floats(&testFaceCopy, INPUT_EXAMPLES, INPUT_LAYER_SIZE);
 
    printf("Copy Theta1 ... ");
-   for(i=0; i < 25; i++)
+   for(i=0; i < HIDDEN_LAYER_SIZE; i++)
    {
-       for(j=0; j < 3841; j++)
+       for(j=0; j < INPUT_LAYER_SIZE+1; j++)
        {
            Theta1Copy[i][j] =  Theta1[i][j];	   
        }
@@ -100,9 +77,9 @@ int main (int argc, char *argv[])
    printf("Done.\n");
 
    printf("Copy Theta2 ... ");
-   for(i=0; i < 2; i++)
+   for(i=0; i < NUM_LABELS; i++)
    {
-       for(j=0; j < 26; j++)
+       for(j=0; j < HIDDEN_LAYER_SIZE+1; j++)
        {
            Theta2Copy[i][j] =  Theta2[i][j];	   
        }
@@ -110,9 +87,9 @@ int main (int argc, char *argv[])
    printf("Done.\n");
    
    printf("Copy testFace ... ");
-   for(i=0; i < 28; i++)
+   for(i=0; i < INPUT_EXAMPLES; i++)
    {
-       for(j=0; j < 3840; j++)
+       for(j=0; j < INPUT_LAYER_SIZE; j++)
        {
            testFaceCopy[i][j] =  testFace[i][j];	   
        }
@@ -120,7 +97,8 @@ int main (int argc, char *argv[])
    printf("Done.\n");
 
    printf("BEGIN predict ... \n");
-   status = predict(Theta1Copy, 25, 3841, Theta2Copy, 2, 26, testFaceCopy, 28, 3840);
+   status = predict(Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1, Theta2Copy, NUM_LABELS, HIDDEN_LAYER_SIZE+1, testFaceCopy, INPUT_EXAMPLES, INPUT_LAYER_SIZE);
+
    printf("Predict status: %d ... ", status);
    if(status == 0)
    {     
@@ -138,7 +116,7 @@ int main (int argc, char *argv[])
    deallocate_matrix_floats(&Theta2Copy, 2);
    printf("Done.\n");
    printf("Deallocate testFaceCopy ... ");
-   deallocate_matrix_floats(&testFaceCopy, 28);
+   deallocate_matrix_floats(&testFaceCopy, 42);
    printf("Done.\n");
 
    return 0;
@@ -207,6 +185,11 @@ void add_bias_column_to_matrix(float **src_matrix, int rows, int cols, float **d
    }
 }
 
+void ANN_config()
+{
+}
+
+
 /** \fn int predict(float **mTheta1, float **mTheta2, float **mX)
     \brief Predict the label of an input given a trained neural network
 
@@ -235,17 +218,16 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
    {
        printf("X and Theta1' matrices OK - %dx%d * %dx%d.\n", XRows, XCols+1, Theta1Cols, Theta1Rows);
        status = ALG_MATMUL2D(XRows, Theta1Rows, Theta1Cols, biasedMatrix, tempMatrix, h1Matrix);
-       printf("Multipl result - (%dx%d).\n", XRows, Theta1Rows);
-       print_matrix(h1Matrix, XRows, Theta1Rows);
-       
-       printf("Sigmoid result - (%dx%d).\n", XRows, Theta1Rows);
        sigmoid_matrix(h1Matrix, XRows, Theta1Rows, h1Matrix);
+#if(DEBUG_ON == 1)
+       printf("Sigmoid h1 result - (%dx%d).\n", XRows, Theta1Rows);
        print_matrix(h1Matrix, XRows, Theta1Rows);
-       
+#endif       
    }
    else
    {
-       printf("X and Theta1 not compatible for multiplication.\n"); 
+       printf("X and Theta1 not compatible for multiplication: %dx%d * %dx%d.\n", XRows, XCols+1, Theta1Cols, Theta1Rows); 
+       return -1;
    }
 
    deallocate_matrix_floats(&tempMatrix, XCols);
@@ -263,17 +245,16 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
    {
        printf("h1 and Theta2' matrices OK - %dx%d * %dx%d.\n", XRows, Theta1Rows+1, Theta2Cols, Theta2Rows);
        status = ALG_MATMUL2D(XRows, Theta2Rows, Theta2Cols, biasedMatrix, tempMatrix, h2Matrix);
-       printf("Multipl result - (%dx%d).\n", XRows, Theta2Rows);
-       print_matrix(h2Matrix, XRows, Theta2Rows);
-       
-       printf("Sigmoid result - (%dx%d).\n", XRows, Theta2Rows);
        sigmoid_matrix(h2Matrix, XRows, Theta2Rows, h2Matrix);
+#if(DEBUG_ON == 1)
+       printf("Sigmoid h2 result - (%dx%d).\n", XRows, Theta2Rows);
        print_matrix(h2Matrix, XRows, Theta2Rows);
-       
+#endif       
    }
   else
    {
-       printf("h1 and Theta2 not compatible for multiplication.\n"); 
+       printf("h1 and Theta2 not compatible for multiplication: %dx%d * %dx%d.\n", XRows, Theta1Rows+1, Theta2Cols, Theta2Rows);
+       return -1;
    }
 
    /* In h2Matrix are the results of prediction:
@@ -282,11 +263,23 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
       Get the index of max element in the row and tell if the image is face or not.
     */
    int i;
+   int truePositives = 0, trueNegatives = 0;
+   int falsePositives = 0, falseNegatives = 0;
    for(i=0; i < XRows; i++)
    {
       if(h2Matrix[i][0] > h2Matrix[i][1]) // A Face
       {
-          printf("A Face at %d.\n", i);
+          printf("A Face at %d.", i);
+          if(trueLabels[i][0] == 1)
+          {
+             printf("\tTrue.\n");
+             truePositives++;
+          }
+          else
+          {
+             printf("\tFalse.\n");
+             falsePositives++;
+          }
       }
       else if(h2Matrix[i][0] == h2Matrix[i][1])
       {
@@ -294,9 +287,19 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
       }
       else
       {
-          printf("NOT a Face at %d.\n", i);
+          printf("NOT a Face at %d.", i);
+          if(trueLabels[i][0] == 1)
+          {
+             printf("\tFalse.\n");
+             falseNegatives++;
+          }
+          else
+          {
+             printf("\tTrue.\n");
+             trueNegatives++;
+          }
       }      
-
+    
    }
 
    printf("Deallocate all local matrices.\n");
@@ -305,5 +308,9 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
    deallocate_matrix_floats(&h1Matrix, XRows);
    deallocate_matrix_floats(&h2Matrix, XRows);
  
+   printf("True Positives: %d.\nTrue Negatives: %d.\nFalse Positives: %d.\nFlase Negatives: %d.\n",\
+          truePositives, trueNegatives, falsePositives, falseNegatives);
+
+
    return status;
 }
