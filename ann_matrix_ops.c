@@ -139,6 +139,35 @@ void init_matrix(float **matrix, int rows, int cols)
     }
    }
 }
+/** \fn void read_image(char *fileName, int rows, int cols, float ***dest_matrix)
+    \brief Read a file of floats and store the floats in a 2D matrix with one row.
+
+     The function expects a sequence of floats. For compatibility reasons data is stored in a 2D matrix.
+
+    \param[in] *fileName pointer to the file name with data.
+    \param[in] rows number of rows of the matrix.
+    \param[in] cols number of columns of the matrix.
+    \param[out] ***dest_matrix  pointer to the 2D destination matrix.
+    \param[in] row_index index of the current data in the destination matrix
+    \return nothing.
+*/
+void read_image(char *fileName, int rows, int cols, float ***dest_matrix, int row_index)
+{
+   char errorMsg[80];
+   FILE *pFile;
+
+   pFile = fopen(fileName, "r");
+   if(pFile == NULL)
+   {
+      sprintf(errorMsg, "Can't open file: '%s'", fileName);
+      printf("%s\n", errorMsg);
+    }
+    else
+    {
+       fread((*dest_matrix)[row_index], sizeof(float), (rows*cols), pFile);
+       fclose(pFile);
+    }
+}
 
 void read_matrix(char *fileName, float ***subs, int *rows, int *cols)
 {
@@ -217,7 +246,6 @@ int ALG_MATMUL2D(int M, int N, int P, float** A, float** B, float** C)
 {
    int I=0, J=0, K=0;
    float temp = 0.0;
-   printf("start mmult\n");
  
  #pragma omp parallel shared(A,B,C) private(I,J,K,temp)
  {

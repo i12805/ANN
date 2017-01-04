@@ -6,6 +6,7 @@ void allocate_matrix_floats(float***, int, int);
 void deallocate_matrix_floats(float***, int);
 void init_matrix(float**, int, int);
 void read_matrix(char*, float***, int*, int*);
+void read_image(char*, int, int, float***, int);
 void print_matrix(float**, int, int);
 
 void allocate_matrix_char(char***, int, int);
