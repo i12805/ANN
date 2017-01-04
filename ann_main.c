@@ -47,7 +47,7 @@ int main (int argc, char *argv[])
 
       /* Read input image and store it in preallocated matrix */
       printf("Read file %s.\n", fileName);
-      read_image(fileName, IMG_HEIGHT, IMG_WIDTH, &image, i);
+      read_image(fileName, IMG_HEIGHT, IMG_WIDTH, &image, i-1);
    }
 
    /* Remap/scale pixes values in the range [-1, 1] */
