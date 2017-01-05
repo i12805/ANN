@@ -16,6 +16,7 @@
 #define INPUT_LAYER_SIZE (IMG_WIDTH * IMG_HEIGHT)
 #define HIDDEN_LAYER_SIZE 25
 #define NUM_LABELS 2
+#define INPUT_EXAMPLES 42
 
 /* For debug purposes */
 #define DEBUG_ON 0
@@ -50,6 +51,7 @@ int main (int argc, char *argv[])
       read_image(fileName, IMG_HEIGHT, IMG_WIDTH, &image, i-1);
    }
 
+   print_matrix(image, input_examples, INPUT_LAYER_SIZE);
    /* Remap/scale pixes values in the range [-1, 1] */
    printf("Scaling pixel data to [-1, 1] ... ");
    for(i = 0; i < input_examples; i++)
@@ -60,12 +62,13 @@ int main (int argc, char *argv[])
        }
    }
    printf("Done.\n");
-   
+   print_matrix(image, input_examples, INPUT_LAYER_SIZE);  
+ 
    float **Theta1Copy, **Theta2Copy, **testFaceCopy;
 
    allocate_matrix_floats(&Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1); 
    allocate_matrix_floats(&Theta2Copy, NUM_LABELS, HIDDEN_LAYER_SIZE+1);
-   //allocate_matrix_floats(&testFaceCopy, INPUT_EXAMPLES, INPUT_LAYER_SIZE);
+   allocate_matrix_floats(&testFaceCopy, INPUT_EXAMPLES, INPUT_LAYER_SIZE);
 
    printf("Copy Theta1 ... ");
    for(i=0; i < HIDDEN_LAYER_SIZE; i++)
@@ -86,7 +89,7 @@ int main (int argc, char *argv[])
        }
    }
    printf("Done.\n");
-   /*
+/*  
    printf("Copy testFace ... ");
    for(i=0; i < INPUT_EXAMPLES; i++)
    {
@@ -96,11 +99,11 @@ int main (int argc, char *argv[])
        }
    }
    printf("Done.\n");
-   */
+*/  
    printf("BEGIN predict ... \n");
    //status = predict(Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1, Theta2Copy, NUM_LABELS, HIDDEN_LAYER_SIZE+1, testFaceCopy, INPUT_EXAMPLES, INPUT_LAYER_SIZE);
 
-   status = predict(Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1, Theta2Copy, NUM_LABELS, HIDDEN_LAYER_SIZE+1, image, input_examples, INPUT_LAYER_SIZE);
+   //status = predict(Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1, Theta2Copy, NUM_LABELS, HIDDEN_LAYER_SIZE+1, image, input_examples, INPUT_LAYER_SIZE);
    
    printf("Predict status: %d ... ", status);
    if(status == 0)

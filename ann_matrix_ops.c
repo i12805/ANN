@@ -199,7 +199,7 @@ void print_matrix(float **matrix, int rows, int cols)
    {
     for(j=0; j < cols; j++)
     {
-     printf("%5.5f ", matrix[i][j]);
+     printf("%.5f ", matrix[i][j]);
     }
     putchar('\n');
    }

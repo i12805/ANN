@@ -1,11 +1,15 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include "Thetas.h"
 
+
+int read_image_file(char*);
+int toInt(char*);
 
 int main (int argc, char *argv[])
 {
-   
+   printf("Read %d items from file %s.\n", read_image_file(argv[1]), argv[1]);
+
+   return 0;
 }
 
 int gen_random(void)
@@ -30,23 +34,86 @@ int gen_random(void)
    return 0;
 }
 
-int gen_from_header(char *fileName)
+int read_image_file(char *fileName)
 {
-   
-   char errorMsg[80];
    FILE *pFile;
-
+   int i=0, j=0, ret=999, rows, cols;
+   char var, str[4];
+   char imgType[2];
+   
    pFile = fopen(fileName, "r");
    if(pFile == NULL)
    {
-      sprintf(errorMsg, "Can't open file: '%s'", fileName);
-      printf("%s\n", errorMsg);
+      printf("Cannot open %s.\n", fileName);
+      return -1;
    }
-   fread(rows, sizeof(int), 1, pFile);
-   fread(cols, sizeof(int), 1, pFile);
+
+   fscanf(pFile, "%s", imgType);
+   fscanf(pFile, "%d", &cols);
+   fscanf(pFile, "%d", &rows);
+
+   int pixels[(rows*cols)];
    
-   //allocate_matrix(subs, *rows, *cols);
-   allocate_matrix_floats(subs, *rows, *cols);
-   fread((*subs)[0], sizeof(float), ((*rows) * (*cols)), pFile);
+   while(!feof(pFile))
+   {
+      ret = fscanf(pFile, "%c", &var);
+      if((var == '\n')||(var == ' '))
+      {
+          str[j] = '\0';
+          pixels[i++] =  toInt(str);
+          j = 0;
+      }
+      else
+      {
+          str[j++] = var;
+      }
+   }
    fclose(pFile);
+
+   printf("Type: %s\n", imgType);
+   printf("Cols: %d\n", cols);
+   printf("Rows: %d\n", rows);
+
+   for(i=0; i < 320; i++)
+   {
+       for(j = 0; j < 12; j++)
+       {
+           printf("%d ", pixels[i*12+j]);
+       }
+       printf("\n");
+   }
+   return ret;
+}
+
+int toInt(char a[])
+{
+  int c, sign, offset, n;
+ 
+  if (a[0] == '-')
+  {  // Handle negative integers
+    sign = -1;
+  }
+ 
+  if (sign == -1)
+  {  // Set starting position to convert
+    offset = 1;
+  }
+  else
+  {
+    offset = 0;
+  }
+ 
+  n = 0;
+ 
+  for (c = offset; a[c] != '\0'; c++)
+  {
+    n = n * 10 + a[c] - '0';
+  }
+ 
+  if (sign == -1)
+  {
+    n = -n;
+  }
+ 
+  return n;
 }
