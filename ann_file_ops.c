@@ -1,45 +1,18 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include "ann_file_ops.h"
 
 
-int read_image_file(char*);
+
 int toInt(char*);
 
-int main (int argc, char *argv[])
-{
-   printf("Read %d items from file %s.\n", read_image_file(argv[1]), argv[1]);
 
-   return 0;
-}
-
-int gen_random(void)
-{
-   int i;
-   int rows = 10;
-   int cols = 6;
-   FILE *pFile;
-   float *a;
-
-   a = (float *)malloc(rows*cols*sizeof(float));
-   for(i = 0; i < rows*cols; i++)
-   {
-      a[i] = (float)(1.0/i);
-   }
-   pFile = fopen("kur", "w");
-   fwrite(&rows, sizeof(int), 1, pFile);
-   fwrite(&cols, sizeof(int), 1, pFile);
-   fwrite(a, sizeof(float), (rows*cols), pFile);
-   fclose(pFile);
-   free(a);
-   return 0;
-}
-
-int read_image_file(char *fileName)
+int read_image_file(char *fileName, pgm_image_t *image)
 {
    FILE *pFile;
-   int i=0, j=0, ret=999, rows, cols;
+   int i=0, j=0, ret=999, rows, cols, maxColorValue;
    char var, str[4];
-   char imgType[2];
+   char imgType[3];
    
    pFile = fopen(fileName, "r");
    if(pFile == NULL)
@@ -51,16 +24,18 @@ int read_image_file(char *fileName)
    fscanf(pFile, "%s", imgType);
    fscanf(pFile, "%d", &cols);
    fscanf(pFile, "%d", &rows);
+   fscanf(pFile, "%d", &maxColorValue);
 
-   int pixels[(rows*cols)];
+   float *pixels = (float *)malloc(rows*cols*sizeof(float));
    
    while(!feof(pFile))
    {
       ret = fscanf(pFile, "%c", &var);
       if((var == '\n')||(var == ' '))
       {
+          if(j == 0) continue;
           str[j] = '\0';
-          pixels[i++] =  toInt(str);
+          pixels[i++] = (float)toInt(str);
           j = 0;
       }
       else
@@ -69,19 +44,34 @@ int read_image_file(char *fileName)
       }
    }
    fclose(pFile);
-
-   printf("Type: %s\n", imgType);
-   printf("Cols: %d\n", cols);
-   printf("Rows: %d\n", rows);
-
+#ifdef DEBUG_ON
    for(i=0; i < 320; i++)
    {
-       for(j = 0; j < 12; j++)
+       for(j=0; j < 12; j++)
        {
-           printf("%d ", pixels[i*12+j]);
+           printf("%f ", pixels[i*12+j]);
        }
        printf("\n");
+    }    
+#endif
+   image->imageType[0] = imgType[0];
+   image->imageType[1] = imgType[1];
+   image->imageType[2] = imgType[2];
+   image->width = cols;
+   image->height = rows;
+   image->maxColorValue = maxColorValue;
+   image->paiPixels = pixels;
+#ifdef DEBUG_ON
+   printf("image type: %s\n", image->imageType);
+   printf("image width: %d\n", image->width);
+   printf("image height: %d\n", image->height);
+   printf("image color value: %d\n", image->maxColorValue);
+   for(i=0; i < (rows*cols); i++)
+   {
+       printf("%f ", image->paiPixels[i]);
    }
+   printf("\n\n");
+#endif
    return ret;
 }
 

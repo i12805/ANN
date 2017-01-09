@@ -4,6 +4,7 @@
 #include <string.h>
 #include <math.h>
 #include "ann_matrix_ops.h"
+#include "ann_file_ops.h"
 #include "Thetas.h"
 
 #define REMAP_PIXEL(p) {(((2.0*(p - 0))/255)-1)}
@@ -30,8 +31,9 @@ int main (int argc, char *argv[])
 {
    float **image;
    char *fileName;
-   int i, j, status;
+   int i, j, status = 999;
    int input_examples = 0;
+   pgm_image_t imageData;
    
    if(argc < 2)
    {
@@ -42,33 +44,44 @@ int main (int argc, char *argv[])
    input_examples = argc - 1;
    allocate_matrix_floats(&image, input_examples, INPUT_LAYER_SIZE);
 
-   for(i = 1; i < argc; i++)
-   {
-      fileName = argv[i];
-
-      /* Read input image and store it in preallocated matrix */
-      printf("Read file %s.\n", fileName);
-      read_image(fileName, IMG_HEIGHT, IMG_WIDTH, &image, i-1);
-   }
-
-   print_matrix(image, input_examples, INPUT_LAYER_SIZE);
-   /* Remap/scale pixes values in the range [-1, 1] */
-   printf("Scaling pixel data to [-1, 1] ... ");
    for(i = 0; i < input_examples; i++)
    {
-       for(j = 0; j < INPUT_LAYER_SIZE; j++)
-       {
-	   image[i][j] = (float)REMAP_PIXEL(image[i][j]);
-       }
+      fileName = argv[i+1];
+
+      /* Read input image and store it in preallocated matrix */
+      printf("Read file %s - %d of %d... ", fileName, i, input_examples);
+      //read_image(fileName, IMG_HEIGHT, IMG_WIDTH, &image, i-1);
+      read_image_file(fileName, &imageData);
+      printf("Done.\n");
+#if(DEBUG_ON == 1)
+      for(j=0; j < (imageData.width*imageData.height); j++)
+      {
+          printf("%f ", (imageData.paiPixels)[j]);
+      }   
+      printf("\n");
+#endif
+      //TODO check width, height, colorValue and adjust accordingly parameters, check dimentions!!!
+      /* Remap/scale pixes values in the range [-1, 1] */
+      printf("Scaling pixel data to [-1, 1] ... ");
+      for(j = 0; j < INPUT_LAYER_SIZE; j++)
+      {
+	   image[i][j] = (float)REMAP_PIXEL(imageData.paiPixels[j]);
+      }
+      printf("Done.\n");
+   
+      printf("Free image data pointer ...");
+      free(imageData.paiPixels);
+      printf("Done.\n");
    }
-   printf("Done.\n");
-   print_matrix(image, input_examples, INPUT_LAYER_SIZE);  
+
+
+   //print_matrix(image, input_examples, INPUT_LAYER_SIZE);
  
    float **Theta1Copy, **Theta2Copy, **testFaceCopy;
 
    allocate_matrix_floats(&Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1); 
    allocate_matrix_floats(&Theta2Copy, NUM_LABELS, HIDDEN_LAYER_SIZE+1);
-   allocate_matrix_floats(&testFaceCopy, INPUT_EXAMPLES, INPUT_LAYER_SIZE);
+//   allocate_matrix_floats(&testFaceCopy, INPUT_EXAMPLES, INPUT_LAYER_SIZE);
 
    printf("Copy Theta1 ... ");
    for(i=0; i < HIDDEN_LAYER_SIZE; i++)
@@ -103,7 +116,7 @@ int main (int argc, char *argv[])
    printf("BEGIN predict ... \n");
    //status = predict(Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1, Theta2Copy, NUM_LABELS, HIDDEN_LAYER_SIZE+1, testFaceCopy, INPUT_EXAMPLES, INPUT_LAYER_SIZE);
 
-   //status = predict(Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1, Theta2Copy, NUM_LABELS, HIDDEN_LAYER_SIZE+1, image, input_examples, INPUT_LAYER_SIZE);
+   status = predict(Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1, Theta2Copy, NUM_LABELS, HIDDEN_LAYER_SIZE+1, image, input_examples, INPUT_LAYER_SIZE);
    
    printf("Predict status: %d ... ", status);
    if(status == 0)
@@ -255,8 +268,10 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
       Get the index of max element in the row and tell if the image is face or not.
     */
    int i;
+#if(CHECK_LABELS == 1)
    int truePositives = 0, trueNegatives = 0;
    int falsePositives = 0, falseNegatives = 0;
+#endif
    for(i=0; i < XRows; i++)
    {
       if(h2Matrix[i][0] > h2Matrix[i][1]) // A Face

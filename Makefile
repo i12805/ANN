@@ -50,11 +50,13 @@ cannon: bin bin/host_cannon bin/e_cannon.elf common.h
 
 
 
-ann_main: ann_main.c ann_matrix_ops.c ann_matrix_ops.h Thetas.h
+ann_main: ann_main.c ann_matrix_ops.c ann_matrix_ops.h ann_file_ops.c ann_file_ops.h Thetas.h
 	@echo "CC $<"
-	gcc $< ann_matrix_ops.c -o $@ -Wall -g -fopenmp -lm -I.
+	gcc $< ann_matrix_ops.c ann_file_ops.c -o $@ -Wall -g -fopenmp -lm -I.
 
-
+%: %.c
+	@echo "CCC $<"
+	gcc $< -o $@ -Wall -g -fopenmp -lm -I.
 
 clean:
 	rm -r bin
