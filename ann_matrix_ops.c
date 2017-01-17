@@ -71,125 +71,83 @@ void print_matrix_char(char **matrix, int rows, int cols)
 
 /* Matrix aux functions for floats */
 
-/** \fn void allocate_matrix(float ***subs, int rows, int cols)
-    \brief Allocate memry for a rows x cols matrix of floats
+/** \fn float **allocate_matrix_floats(int rows, int cols, float epsilon_init)
+    \brief Allocate memory rows x cols of floats and initialises the matrix
 
-    \param[out] ***subs pointer to the destination matrix's address.
+    If parameter epsilon_init is not zero, the init valie of the matix member would be rand()*2*epsilon - epsilon.
+
     \param[in] rows number of rows of the matrix.
     \param[in] cols number of columns of the matrix.
-    \return void
+    \param[in] epsilon_init init factor. typical value = 0.12
+    \return a pointer to the new matrix. In failure, returns NULL pointer.
 */
-
-/* TODO check errors -  if malloc returms NULL, then return the status */
-void allocate_matrix(float ***subs, int rows, int cols)
+float **allocate_matrix_floats(int rows, int cols, float epsilon_init)
 {
-   int i;  
-   float *storage;
-
-   storage = (float *)malloc(rows*cols*sizeof(float));
-   *subs = (float **)malloc(rows*sizeof(float *));
-
-   for(i = 0; i < rows; i++)
-   {
-     (*subs)[i] = &storage[i*cols];
-   }
-   return;
-}
-
-void allocate_matrix_floats(float ***matrix, int rows, int cols)
-{
-   int i;
-   *matrix = (float **)malloc(rows*cols*sizeof(float));
-   if(*matrix == NULL)
+   int i, j, kur;
+   float **matrix, a;
+   
+   matrix = (float **)malloc(rows*sizeof(float*));
+   if(matrix == NULL)
    {
       printf("ERROR allocating memory for rows of a matrix %dx%d.\n", rows, cols);
-      exit(-1);
+      return(NULL);
    }
    for(i=0; i < rows; i++)
    {
-       (*matrix)[i] = (float*)malloc(cols*sizeof(float));
-       if((*matrix)[i] == NULL)
+       matrix[i] = (float*)malloc(cols*sizeof(float));
+       if(matrix[i] == NULL)
        { 
             printf("ERROR allocating memory for cols of a matrix %dx%d.\n", rows, cols);
-            exit(-1);
+            kur = deallocate_matrix_floats(matrix, rows);
+            return(NULL);
+       }
+
+       /* initializes the matrix with rsndom values or zeros */
+       for (j = 0; j < cols; j++)
+       {
+           a = rand();
+           matrix[i][j] = (a*2.0*epsilon_init - epsilon_init);
        }
    }
+   return(matrix);
 }
 
-void deallocate_matrix_floats(float ***matrix, int rows)
+int deallocate_matrix_floats(float **matrix, int rows)
 {
    int i;
+
+   if(matrix == NULL)
+   {
+       return(-1);
+   }
+
    for(i=0; i < rows; i++)
    {
-       free((*matrix)[i]);
+       free(matrix[i]);
+       matrix[i] = NULL;
    }
-   free(*matrix);
-   return;
+   free(matrix);
+   matrix = NULL;
+   return(0);
 }
 
-void init_matrix(float **matrix, int rows, int cols)
+int init_matrix(float **matrix, int rows, int cols)
 {
    int i, j;
+   if(matrix == NULL)
+   {
+      return(-1);
+   }
 
    for(i=0; i < rows; i++)
    {
-    for(j=0; j < cols; j++)
-    {
-        matrix[i][j] = 0.0;
-    }
+      for(j=0; j < cols; j++)
+      {
+         matrix[i][j] = 0.0;
+      }
    }
+   return(0);
 }
-/** \fn void read_image(char *fileName, int rows, int cols, float ***dest_matrix)
-    \brief Read a file of floats and store the floats in a 2D matrix with one row.
-
-     The function expects a sequence of floats. For compatibility reasons data is stored in a 2D matrix.
-
-    \param[in] *fileName pointer to the file name with data.
-    \param[in] rows number of rows of the matrix.
-    \param[in] cols number of columns of the matrix.
-    \param[out] ***dest_matrix  pointer to the 2D destination matrix.
-    \param[in] row_index index of the current data in the destination matrix
-    \return nothing.
-*/
-void read_image(char *fileName, int rows, int cols, float ***dest_matrix, int row_index)
-{
-   char errorMsg[80];
-   FILE *pFile;
-
-   pFile = fopen(fileName, "r");
-   if(pFile == NULL)
-   {
-      sprintf(errorMsg, "Can't open file: '%s'", fileName);
-      printf("%s\n", errorMsg);
-    }
-    else
-    {
-       fread((*dest_matrix)[row_index], sizeof(float), (rows*cols), pFile);
-       fclose(pFile);
-    }
-}
-
-void read_matrix(char *fileName, float ***subs, int *rows, int *cols)
-{
-   char errorMsg[80];
-   FILE *pFile;
-
-   pFile = fopen(fileName, "r");
-   if(pFile == NULL)
-   {
-      sprintf(errorMsg, "Can't open file: '%s'", fileName);
-      printf("%s\n", errorMsg);
-   }
-   fread(rows, sizeof(int), 1, pFile);
-   fread(cols, sizeof(int), 1, pFile);
-   
-   //allocate_matrix(subs, *rows, *cols);
-   allocate_matrix_floats(subs, *rows, *cols);
-   fread((*subs)[0], sizeof(float), ((*rows) * (*cols)), pFile);
-   fclose(pFile);
-}
-
-
 
 void print_matrix(float **matrix, int rows, int cols)
 {
@@ -207,20 +165,24 @@ void print_matrix(float **matrix, int rows, int cols)
 }
 
 
-/** \fn void transpose_matrix(float **src_matrix, int rows, int cols, float **dest_matrix)
+/** \fn int transpose_matrix(float **src_matrix, int rows, int cols, float **dest_matrix)
     \brief Transpose a 2D matrix.
 
     \param[in] **src_matrix  pointer to the 2D source matrix.
     \param[in] rows number of rows of the matrix.
     \param[in] cols number of columns of the matrix.
     \param[out] **dest_matrix  pointer to the 2D destination(i.e. transposed) matrix.
-    \return nothing.
+    \return zero in success, -1 if any of src or dest pointers are null.
 */
 
-void transpose_matrix(float **src_matrix, int rows, int cols, float **dest_matrix)
+int transpose_matrix(float **src_matrix, int rows, int cols, float **dest_matrix)
 {
    
    int i, j;
+   if((src_matrix == NULL) || (dest_matrix == NULL))
+   {
+       return(-1);
+   }
 
    for(i=0; i < rows; i++)
    {
@@ -229,7 +191,9 @@ void transpose_matrix(float **src_matrix, int rows, int cols, float **dest_matri
      dest_matrix[j][i] = src_matrix[i][j];
     }
    }
+   return(0);
 }
+
 /** \fn int ALG_MATMUL2D(int M, int N, int P, float** A, float** B, float** C)
     \brief Multiplies two 2D matrices of floats.
 

@@ -42,14 +42,19 @@ int main (int argc, char *argv[])
    }
    
    input_examples = argc - 1;
-   allocate_matrix_floats(&image, input_examples, INPUT_LAYER_SIZE);
+   image = allocate_matrix_floats(input_examples, INPUT_LAYER_SIZE, 0);
+   if(image == NULL)
+   {
+      printf("Error allocating image.\n");
+      return(-1);
+   }
 
    for(i = 0; i < input_examples; i++)
    {
       fileName = argv[i+1];
 
       /* Read input image and store it in preallocated matrix */
-      printf("Read file %s - %d of %d... ", fileName, i, input_examples);
+      printf("Read file %s - %d of %d... ", fileName, i+1, input_examples);
       //read_image(fileName, IMG_HEIGHT, IMG_WIDTH, &image, i-1);
       read_image_file(fileName, &imageData);
       printf("Done.\n");
@@ -68,20 +73,23 @@ int main (int argc, char *argv[])
 	   image[i][j] = (float)REMAP_PIXEL(imageData.paiPixels[j]);
       }
       printf("Done.\n");
-   
+#if(DEBUG_ON == 1)   
+      print_matrix(image, input_examples, INPUT_LAYER_SIZE);
+#endif   
       printf("Free image data pointer ...");
       free(imageData.paiPixels);
       printf("Done.\n");
    }
 
+   float **Theta1Copy, **Theta2Copy;
 
-   //print_matrix(image, input_examples, INPUT_LAYER_SIZE);
- 
-   float **Theta1Copy, **Theta2Copy, **testFaceCopy;
-
-   allocate_matrix_floats(&Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1); 
-   allocate_matrix_floats(&Theta2Copy, NUM_LABELS, HIDDEN_LAYER_SIZE+1);
-//   allocate_matrix_floats(&testFaceCopy, INPUT_EXAMPLES, INPUT_LAYER_SIZE);
+   Theta1Copy = allocate_matrix_floats(HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1, 0); 
+   Theta2Copy = allocate_matrix_floats(NUM_LABELS, HIDDEN_LAYER_SIZE+1, 0);
+   if((Theta1Copy == NULL) || (Theta2Copy == NULL))
+   {
+       printf("Error allocating Theta copies.\n");
+       return(-1);
+   }
 
    printf("Copy Theta1 ... ");
    for(i=0; i < HIDDEN_LAYER_SIZE; i++)
@@ -102,20 +110,9 @@ int main (int argc, char *argv[])
        }
    }
    printf("Done.\n");
-/*  
-   printf("Copy testFace ... ");
-   for(i=0; i < INPUT_EXAMPLES; i++)
-   {
-       for(j=0; j < INPUT_LAYER_SIZE; j++)
-       {
-           testFaceCopy[i][j] =  testFace[i][j];	   
-       }
-   }
-   printf("Done.\n");
-*/  
+   
    printf("BEGIN predict ... \n");
-   //status = predict(Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1, Theta2Copy, NUM_LABELS, HIDDEN_LAYER_SIZE+1, testFaceCopy, INPUT_EXAMPLES, INPUT_LAYER_SIZE);
-
+   
    status = predict(Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1, Theta2Copy, NUM_LABELS, HIDDEN_LAYER_SIZE+1, image, input_examples, INPUT_LAYER_SIZE);
    
    printf("Predict status: %d ... ", status);
@@ -128,15 +125,12 @@ int main (int argc, char *argv[])
       printf("Error.\n");
    }
 
-   printf("Deallocate Theta1Copy ... ");
-   deallocate_matrix_floats(&Theta1Copy, HIDDEN_LAYER_SIZE); 
-   printf("Done.\n");
-   printf("Deallocate Theta2Copy ... ");
-   deallocate_matrix_floats(&Theta2Copy, NUM_LABELS);
-   printf("Done.\n");
-   printf("Deallocate image mtrx ... ");
-   deallocate_matrix_floats(&image, input_examples);
-   printf("Done.\n");
+   int dealloc_status = 0;
+   printf("Deallocate Thetas and image matrix ... ");
+   dealloc_status = deallocate_matrix_floats(Theta1Copy, HIDDEN_LAYER_SIZE); 
+   dealloc_status = deallocate_matrix_floats(Theta2Copy, NUM_LABELS);
+   dealloc_status = deallocate_matrix_floats(image, input_examples);
+   printf("Done - %d.\n", dealloc_status);
 
    return 0;
 }
@@ -210,18 +204,27 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
 {
    float **biasedMatrix, **tempMatrix;
    float **h1Matrix, **h2Matrix;
-   int status = 1;
+   int status = 1, dealloc_status = 0;
 
    /* allocate memoty for transposed Theta1, biased X and result h1 */
-   allocate_matrix_floats(&tempMatrix, Theta1Cols, Theta1Rows); // holds transposed Theta1
-   allocate_matrix_floats(&h1Matrix, XRows, Theta1Cols); // holds h1
-   allocate_matrix_floats(&biasedMatrix, XRows, XCols+1);
+   tempMatrix = allocate_matrix_floats(Theta1Cols, Theta1Rows, 0); // holds transposed Theta1
+   h1Matrix   = allocate_matrix_floats(XRows, Theta1Cols, 0); // holds h1
+   biasedMatrix = allocate_matrix_floats(XRows, XCols+1, 0);
+
+   if((tempMatrix == NULL) || (h1Matrix == NULL) || (biasedMatrix == NULL))
+   {
+       printf("Error allocating temp, h1, biased.\n");
+       return(-1);
+   }
+
    add_bias_column_to_matrix(mX, XRows, XCols, biasedMatrix);
-   transpose_matrix(mTheta1, Theta1Rows, Theta1Cols, tempMatrix);
+   int transpose_status = transpose_matrix(mTheta1, Theta1Rows, Theta1Cols, tempMatrix);
   
    if(((XCols+1) == Theta1Cols))
    {
-       printf("X and Theta1' matrices OK - %dx%d * %dx%d.\n", XRows, XCols+1, Theta1Cols, Theta1Rows);
+#if(DEBUG_ON == 1)      
+        printf("X and Theta1' matrices OK - %dx%d * %dx%d.\n", XRows, XCols+1, Theta1Cols, Theta1Rows);
+#endif
        status = ALG_MATMUL2D(XRows, Theta1Rows, Theta1Cols, biasedMatrix, tempMatrix, h1Matrix);
        sigmoid_matrix(h1Matrix, XRows, Theta1Rows, h1Matrix);
 #if(DEBUG_ON == 1)
@@ -232,23 +235,32 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
    else
    {
        printf("X and Theta1 not compatible for multiplication: %dx%d * %dx%d.\n", XRows, XCols+1, Theta1Cols, Theta1Rows); 
-       return -1;
+       return(-1);
    }
 
-   deallocate_matrix_floats(&tempMatrix, XCols);
-   deallocate_matrix_floats(&biasedMatrix, XRows);
+   deallocate_matrix_floats(tempMatrix, XCols);
+   deallocate_matrix_floats(biasedMatrix, XRows);
 
    /****************************************/
    
-   allocate_matrix_floats(&tempMatrix, Theta2Cols, Theta2Rows); // holds transposed Theta2
-   allocate_matrix_floats(&h2Matrix, XRows, Theta2Rows); // holds h2
-   allocate_matrix_floats(&biasedMatrix, XRows, Theta1Rows+1);
+   tempMatrix = allocate_matrix_floats(Theta2Cols, Theta2Rows, 0); // holds transposed Theta2
+   h2Matrix = allocate_matrix_floats(XRows, Theta2Rows, 0); // holds h2
+   biasedMatrix = allocate_matrix_floats(XRows, Theta1Rows+1, 0);
+   
+   if((tempMatrix == NULL) || (h2Matrix == NULL) || (biasedMatrix == NULL))
+   {
+       printf("Error allocating temp, h2, biased.\n");
+       return(-1);
+   }
+
    add_bias_column_to_matrix(h1Matrix, XRows, Theta1Rows, biasedMatrix);
-   transpose_matrix(mTheta2, Theta2Rows, Theta2Cols, tempMatrix);
+   transpose_status = transpose_matrix(mTheta2, Theta2Rows, Theta2Cols, tempMatrix);
   
    if((Theta1Rows+1) == Theta2Cols)
    {
+#if(DEBUG_ON == 1)
        printf("h1 and Theta2' matrices OK - %dx%d * %dx%d.\n", XRows, Theta1Rows+1, Theta2Cols, Theta2Rows);
+#endif
        status = ALG_MATMUL2D(XRows, Theta2Rows, Theta2Cols, biasedMatrix, tempMatrix, h2Matrix);
        sigmoid_matrix(h2Matrix, XRows, Theta2Rows, h2Matrix);
 #if(DEBUG_ON == 1)
@@ -316,11 +328,11 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
    }
 
    printf("Deallocate all local matrices ... ");
-   deallocate_matrix_floats(&tempMatrix, Theta2Cols);
-   deallocate_matrix_floats(&biasedMatrix, XRows);
-   deallocate_matrix_floats(&h1Matrix, XRows);
-   deallocate_matrix_floats(&h2Matrix, XRows);
-   printf("Done.\n");
+   dealloc_status += deallocate_matrix_floats(tempMatrix, Theta2Cols);
+   dealloc_status += deallocate_matrix_floats(biasedMatrix, XRows);
+   dealloc_status += deallocate_matrix_floats(h1Matrix, XRows);
+   dealloc_status += deallocate_matrix_floats(h2Matrix, XRows);
+   printf("Done - %s.\n", (dealloc_status?"Error!":"OK."));
 
 #if(CHECK_LABELS == 1) 
    printf("True Positives: %d.\nTrue Negatives: %d.\nFalse Positives: %d.\nFlase Negatives: %d.\n",\
@@ -328,4 +340,32 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
 #endif
 
    return status;
+}
+
+int sigmoid_gradient_matrix(float **src_matrix, int rows, int cols, float **dest_matrix)
+{
+   int i, j, dealloc_status;
+   float **sigmoid_temp = allocate_matrix_floats(rows, cols, 0);
+   if(sigmoid_temp == NULL)
+   {
+      return(-1);
+   }
+   else
+   {
+      sigmoid_matrix(src_matrix, rows, cols, sigmoid_temp);
+      for(i=0; i < rows; i++)
+      {
+         for(j=0; j < cols; j++)
+         {
+             dest_matrix[i][j] = sigmoid_temp[i][j] * (1 - sigmoid_temp[i][j]);
+         }
+      }
+   }
+   dealloc_status = deallocate_matrix_floats(sigmoid_temp, rows);
+   return(0);
+}
+
+void nnCostFunction(float **Theta1, float **Theta2, int input_layer_size, int hidden_layer_size, int num_labels, int input_examples, float **X, float **y, float lambda, float *J, float **gradient)
+{
+   return;
 }
