@@ -13,4 +13,4 @@ void print_matrix_char(char**, int, int);
 int transpose_matrix(float **src_matrix, int rows, int cols, float **dest_matrix);
 int ALG_MATMUL2D(int M, int N, int P, float** A, float** B, float** C);
 
-#endif
+#endif /* ANN_MATRIX_OPS_H */

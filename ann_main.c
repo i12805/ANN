@@ -1,11 +1,17 @@
-#include <omp.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include "ann_config.h"
 #include "ann_matrix_ops.h"
 #include "ann_file_ops.h"
-#include "Thetas.h"
+
+#ifdef USE_PARALLELLA
+#include <e-hal.h>
+#include "common.h"
+#else
+#include <omp.h>
+#endif
 
 #define REMAP_PIXEL(p) {(((2.0*(p - 0))/255)-1)}
 
@@ -25,23 +31,31 @@
 
 void sigmoid_matrix(float**, int, int, float**);
 void add_bias_column_to_matrix(float **src_matrix, int rows, int cols, float **dest_matrix);
-int predict(float**, int, int, float**, int, int, float**, int, int);
+int *predict(float**, int, int, float**, int, int, float**, int, int);
+int recognise(int, char**);
+
+
 
 int main (int argc, char *argv[])
 {
-   float **image;
-   char *fileName;
-   int i, j, status = 999;
-   int input_examples = 0;
-   pgm_image_t imageData;
-   
    if(argc < 2)
    {
        printf("Give me at least one input file.\n");
        exit(-1);
    }
    
-   input_examples = argc - 1;
+   printf("recognised: %d.\n", recognise(argc-1, argv));
+   return 0;
+}
+
+int recognise(int input_examples, char *image_list[])
+{
+   float **image;
+   char *fileName;
+   int i, j, return_value = 1;
+   pgm_image_t imageData;
+   
+   
    image = allocate_matrix_floats(input_examples, INPUT_LAYER_SIZE, 0);
    if(image == NULL)
    {
@@ -51,13 +65,15 @@ int main (int argc, char *argv[])
 
    for(i = 0; i < input_examples; i++)
    {
-      fileName = argv[i+1];
+      fileName = image_list[i+1];
 
       /* Read input image and store it in preallocated matrix */
       printf("Read file %s - %d of %d... ", fileName, i+1, input_examples);
-      //read_image(fileName, IMG_HEIGHT, IMG_WIDTH, &image, i-1);
       read_image_file(fileName, &imageData);
       printf("Done.\n");
+
+//TODO check width, height, colorValue and adjust accordingly parameters, check dimentions!!!
+
 #if(DEBUG_ON == 1)
       for(j=0; j < (imageData.width*imageData.height); j++)
       {
@@ -65,7 +81,7 @@ int main (int argc, char *argv[])
       }   
       printf("\n");
 #endif
-      //TODO check width, height, colorValue and adjust accordingly parameters, check dimentions!!!
+
       /* Remap/scale pixes values in the range [-1, 1] */
       printf("Scaling pixel data to [-1, 1] ... ");
       for(j = 0; j < INPUT_LAYER_SIZE; j++)
@@ -113,28 +129,34 @@ int main (int argc, char *argv[])
    
    printf("BEGIN predict ... \n");
    
-   status = predict(Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1, Theta2Copy, NUM_LABELS, HIDDEN_LAYER_SIZE+1, image, input_examples, INPUT_LAYER_SIZE);
+   int *result = predict(Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1, Theta2Copy, NUM_LABELS, HIDDEN_LAYER_SIZE+1, image, input_examples, INPUT_LAYER_SIZE);
    
-   printf("Predict status: %d ... ", status);
-   if(status == 0)
+   printf("Predict status: ... ");
+   if(result != NULL)
    {     
        printf("OK.\n");
+       for(i = 0; i < input_examples; i++)
+       {
+           printf("Image %s is %d.\n", image_list[i+1], (result[i]));
+       }
+       return_value = 0;
    }
    else
    {
       printf("Error.\n");
+      return_value = -1;
    }
 
    int dealloc_status = 0;
-   printf("Deallocate Thetas and image matrix ... ");
+   printf("Deallocate Thetas, image matrix, result ... ");
    dealloc_status = deallocate_matrix_floats(Theta1Copy, HIDDEN_LAYER_SIZE); 
    dealloc_status = deallocate_matrix_floats(Theta2Copy, NUM_LABELS);
    dealloc_status = deallocate_matrix_floats(image, input_examples);
-   printf("Done - %d.\n", dealloc_status);
+   free(result);
+   printf("Done - %s.\n", (dealloc_status?"Error!":"OK."));
 
-   return 0;
+   return return_value;
 }
-
 
 
 /** \fn vvoid sigmoid_matrix(float **matrix, int rows, iment cols, float **result)
@@ -189,7 +211,7 @@ void add_bias_column_to_matrix(float **src_matrix, int rows, int cols, float **d
 }
 
 
-/** \fn int predict(float **mTheta1, float **mTheta2, float **mX)
+/** \fn int *predict(float **mTheta1, float **mTheta2, float **mX)
     \brief Predict the label of an input given a trained neural network
 
      PREDICT(Theta1, Theta2, X) outputs the predicted label of X given the
@@ -198,9 +220,10 @@ void add_bias_column_to_matrix(float **src_matrix, int rows, int cols, float **d
      \param[in] mTheta1 a pointer to the 2D matrix of layer 1 weigth (Theta1) coeficients;
      \param[in] mTheta2 a pointer to the 2D matrix of layer 2 weigth (Theta2) coeficients;
      \param[in] mX      a pointer to the 2D matrix of input (pixel) values;
-     \return the predicted label (1,2,3, etc.)
+     \return a vector with the predicted labels (1,2,3, etc.) or NULL on error.
 */
-int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, int Theta2Rows, int Theta2Cols, float **mX, int XRows, int XCols)
+
+int *predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, int Theta2Rows, int Theta2Cols, float **mX, int XRows, int XCols)
 {
    float **biasedMatrix, **tempMatrix;
    float **h1Matrix, **h2Matrix;
@@ -214,7 +237,7 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
    if((tempMatrix == NULL) || (h1Matrix == NULL) || (biasedMatrix == NULL))
    {
        printf("Error allocating temp, h1, biased.\n");
-       return(-1);
+       return(NULL);
    }
 
    add_bias_column_to_matrix(mX, XRows, XCols, biasedMatrix);
@@ -235,7 +258,7 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
    else
    {
        printf("X and Theta1 not compatible for multiplication: %dx%d * %dx%d.\n", XRows, XCols+1, Theta1Cols, Theta1Rows); 
-       return(-1);
+       return(NULL);
    }
 
    deallocate_matrix_floats(tempMatrix, XCols);
@@ -250,7 +273,7 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
    if((tempMatrix == NULL) || (h2Matrix == NULL) || (biasedMatrix == NULL))
    {
        printf("Error allocating temp, h2, biased.\n");
-       return(-1);
+       return(NULL);
    }
 
    add_bias_column_to_matrix(h1Matrix, XRows, Theta1Rows, biasedMatrix);
@@ -261,8 +284,15 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
 #if(DEBUG_ON == 1)
        printf("h1 and Theta2' matrices OK - %dx%d * %dx%d.\n", XRows, Theta1Rows+1, Theta2Cols, Theta2Rows);
 #endif
+
+#ifdef USE_PARALLELLA
+       status = multiply_matrix();
+#else
        status = ALG_MATMUL2D(XRows, Theta2Rows, Theta2Cols, biasedMatrix, tempMatrix, h2Matrix);
+#endif
+// TODO get sigmoid matrix into the parallel execution     
        sigmoid_matrix(h2Matrix, XRows, Theta2Rows, h2Matrix);
+
 #if(DEBUG_ON == 1)
        printf("Sigmoid h2 result - (%dx%d).\n", XRows, Theta2Rows);
        print_matrix(h2Matrix, XRows, Theta2Rows);
@@ -271,7 +301,7 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
   else
    {
        printf("h1 and Theta2 not compatible for multiplication: %dx%d * %dx%d.\n", XRows, Theta1Rows+1, Theta2Cols, Theta2Rows);
-       return -1;
+       return(NULL);
    }
 
    /* In h2Matrix are the results of prediction:
@@ -284,10 +314,17 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
    int truePositives = 0, trueNegatives = 0;
    int falsePositives = 0, falseNegatives = 0;
 #endif
+   int *result = (int *)malloc(XRows*sizeof(int));
+   if(result == NULL)
+   {
+       printf("Caanot allocate result vector.\n");
+       return(NULL);
+   }
    for(i=0; i < XRows; i++)
    {
       if(h2Matrix[i][0] > h2Matrix[i][1]) // A Face
       {
+          result[i] = 1;
           printf("A Face at %d.", i);
 #if(CHECK_LABELS == 1)
           if(trueLabels[i][0] == 1)
@@ -309,6 +346,7 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
       }
       else
       {
+          result[i] = 2;
           printf("NOT a Face at %d.", i);
 #if(CHECK_LABELS == 1)
           if(trueLabels[i][0] == 1)
@@ -339,7 +377,7 @@ int predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, in
           truePositives, trueNegatives, falsePositives, falseNegatives);
 #endif
 
-   return status;
+   return(result);
 }
 
 int sigmoid_gradient_matrix(float **src_matrix, int rows, int cols, float **dest_matrix)

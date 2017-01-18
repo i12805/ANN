@@ -99,6 +99,7 @@ float **allocate_matrix_floats(int rows, int cols, float epsilon_init)
        { 
             printf("ERROR allocating memory for cols of a matrix %dx%d.\n", rows, cols);
             kur = deallocate_matrix_floats(matrix, rows);
+            printf("Deallocation status is %d.\n", kur);   
             return(NULL);
        }
 
@@ -236,3 +237,14 @@ int ALG_MATMUL2D(int M, int N, int P, float** A, float** B, float** C)
 }
 
 
+/** \fn int ALG_MATMUL2D(int M, int N, int P, float** A, float** B, float** C)
+    \brief Multiplies two 2D matrices of floats.
+
+    \param[in] M number of rows of the first multiplier matrix.
+    \param[in] N number of columns of the second multiplier matrix.        
+    \param[in] P number of columns of the first multiplier, resp. rows of the first multipl.  matrix.
+    \param[in] **A pointer to the first miltiplier - a 2D matrix of floats.
+    \param[in] **B pointer to the second multiplier - a 2D matrix of floats.
+    \param[out] **C pointer to the result (2D) matrix of floats.
+    \return zero on success.
+*/
