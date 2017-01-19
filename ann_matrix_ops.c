@@ -1,8 +1,13 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <omp.h>
 #include "ann_matrix_ops.h"
 
+#ifdef USE_PARALLELLA
+#include <e-hal.h>
+#include "common.h"
+#else
+#include <omp.h>
+#endif
 /* Matrix manipulation functions */
 
 /** \fn void allocate_matrix_char(char ***subs, int rows, int cols)
@@ -204,9 +209,95 @@ int transpose_matrix(float **src_matrix, int rows, int cols, float **dest_matrix
     \param[in] **A pointer to the first miltiplier - a 2D matrix of floats.
     \param[in] **B pointer to the second multiplier - a 2D matrix of floats.
     \param[out] **C pointer to the result (2D) matrix of floats.
-    \return zero on success.
+    \return zero on success, -1 otherwise.
 */
+#ifdef USE_PARALLELLA
+int ALG_MATMUL2D(int M, int N, int P, float** A, float** B, float** C)
+{
+    int cores_row, cores_col, i, j, k, return_value = 1;
+    unsigned clr = 0, section;
+    e_platform_t platform;
+    e_epiphany_t dev;
 
+    section = (unsigned)(K/CORES);
+    remaining_elements = (unsigned)(K%CORES);
+
+    /* Init Epiphany device */
+    e_init(NULL);
+    /* Reset Epiphany */
+    e_reset_system();
+    e_get_platform_info(&platform);
+    /* open group or all cores - all cores here */
+    if(e_open(&dev, 0, 0, platform.rows, platform.cols))
+    {
+        printf("\nERR Cannot connect to Epiphany device.\n");
+        return(-1);
+    }
+    /* Load kernel program to the cores (all of them), postpone execution */
+    if(e_load_group("e_task.elf", &dev, 0, 0, platform.rows, platform.cols, E_FALSE))
+    {
+        printf("\nERR Cannot load the kernel to Epiphany device.\n");
+        return(-1);
+    }
+
+
+    for(i = 0; i < M; i++)
+    {
+        for(j = 0; j < N; j++)
+        {
+            float c_temp = 0.0;
+            /* next code calculates one K-th element */
+           
+            /* Copy data from host to Epiphany local memory and clear "Done" flag for every core.*/
+            for(cores_row = 0; cores_row < platform.rows; cores_row++)
+            {
+                for(cores_col = 0; cores_col < platform.cols; cores_col++)
+                {
+                    e_write(&dev, cores_row, cores_col, 0x2000, &A[i][(cores_row*platform.cols+cores_col)*section], sizeof(float)*section);
+                    e_write(&dev, cores_row, cores_col, 0x4000, &B[(cores_row*platform.cols+cores_col)*section][j], sizeof(float)*section);
+                    e_write(&dev, cores_row, cores_col, 0x7000, &clr, sizeof(clr));
+                }
+            }
+            /* Start cores */
+            e_start_group(&dev);
+            /* Check if all cores are finished */
+            unsigned all_done = 0, done[CORES];
+            while(all_done < CORES)
+            {
+                for(cores_row = 0; cores_row < platform.rows; cores_row++)
+                {
+                    for(cores_col = 0; cores_col < platform.cols; cores_col++)
+                    {
+                        e_read(&dev, cores_row, cores_col, 0x7000, &done[cores_row*platform.cols+cores_col], sizeof(unsigned));
+                        all_done += done[cores_row*platform.cols+cores_col];
+                    }
+                }
+            }
+            for(cores_row = 0; cores_row < platform.rows; cores_row++)
+            {
+                for(cores_col = 0; cores_col < platform.cols; cores_col++)
+                {
+                    e_read(&dev, cores_row, cores_col, 0x6000, &c_temp, sizeof(float));
+                    C[i][j] += c_temp;
+                }
+            }
+            for(k=((CORES-1)*section); k < K; k++)
+            {
+                C[i][j] += A[i][k] * B[k][j];
+            }
+            /* end of K-th element calc */
+        }
+    }
+    /* Close Epiphany */
+    e_close(&dev);
+    e_finalize();
+    return_value = 0;
+
+    return(return_value);
+}
+
+#else
+/* on the ZYNQ/BRCM ARM Cortex A9 (or whatever) use openmp approach */
 int ALG_MATMUL2D(int M, int N, int P, float** A, float** B, float** C)
 {
    int I=0, J=0, K=0;
@@ -233,18 +324,6 @@ int ALG_MATMUL2D(int M, int N, int P, float** A, float** B, float** C)
   	 	}	
  	
  }
- return 0;
+ return(0);
 }
-
-
-/** \fn int ALG_MATMUL2D(int M, int N, int P, float** A, float** B, float** C)
-    \brief Multiplies two 2D matrices of floats.
-
-    \param[in] M number of rows of the first multiplier matrix.
-    \param[in] N number of columns of the second multiplier matrix.        
-    \param[in] P number of columns of the first multiplier, resp. rows of the first multipl.  matrix.
-    \param[in] **A pointer to the first miltiplier - a 2D matrix of floats.
-    \param[in] **B pointer to the second multiplier - a 2D matrix of floats.
-    \param[out] **C pointer to the result (2D) matrix of floats.
-    \return zero on success.
-*/
+#endif

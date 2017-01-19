@@ -249,6 +249,12 @@ int *predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, i
         printf("X and Theta1' matrices OK - %dx%d * %dx%d.\n", XRows, XCols+1, Theta1Cols, Theta1Rows);
 #endif
        status = ALG_MATMUL2D(XRows, Theta1Rows, Theta1Cols, biasedMatrix, tempMatrix, h1Matrix);
+       if(status != 0)
+       {
+            printf("\nERR from matrix multiplication h1.\n");
+            return(NULL);
+       }
+
        sigmoid_matrix(h1Matrix, XRows, Theta1Rows, h1Matrix);
 #if(DEBUG_ON == 1)
        printf("Sigmoid h1 result - (%dx%d).\n", XRows, Theta1Rows);
@@ -285,11 +291,13 @@ int *predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, i
        printf("h1 and Theta2' matrices OK - %dx%d * %dx%d.\n", XRows, Theta1Rows+1, Theta2Cols, Theta2Rows);
 #endif
 
-#ifdef USE_PARALLELLA
-       status = multiply_matrix();
-#else
        status = ALG_MATMUL2D(XRows, Theta2Rows, Theta2Cols, biasedMatrix, tempMatrix, h2Matrix);
-#endif
+       if(status != 0)
+       {
+            printf("\nERR from matrix multiplication h2.\n");
+            return(NULL);
+       }
+
 // TODO get sigmoid matrix into the parallel execution     
        sigmoid_matrix(h2Matrix, XRows, Theta2Rows, h2Matrix);
 
