@@ -1,62 +1,31 @@
-EBSP=epiphany-bsp/
-ESDK=${EPIPHANY_HOME}
-ELDF=${EBSP}/ebsp_fast.ldf
+ESDK = ${EPIPHANY_HOME}
+ELIBS = -L${ESDK}/tools/host/lib
+INCLUDES = -I${ESDK}/tools/host/include -I.
+ELDF=${ESDK}/bsps/current/internal.ldf
 
-# no-tree-loop-distribute-patters makes sure the compiler
-# does NOT replace loops with calls to memcpy, residing in external memory
-CFLAGS=-std=c99 -Wall -O3 -fno-tree-loop-distribute-patterns
-#CFLAGS=-std=c99 -O3 -ffast-math -Wall
 
-INCLUDES = -I${EBSP}/include \
-           -I${ESDK}/tools/host/include
-
-LIBS = -L${EBSP}/lib
+E_CFLAGS = -g -O3 -ffast-math -Wall
+HOST_CFLAGS = -g -fopenmp -Wall
 
 HOST_LIBS = -L${ESDK}/tools/host/lib \
             -L/usr/arm-linux-gnueabihf/lib
 
-E_LIBS = -L${ESDK}/tools/host/lib
+HOST_LIB_NAMES = -le-hal -le-loader -lpthread -lm
 
-HOST_LIB_NAMES = -lhost-bsp -le-hal -le-loader
+E_LIB_NAMES = -le-lib -lm 
 
-E_LIB_NAMES = -le-bsp -le-lib
 
-all: cannon
-
-bin:
-	@mkdir -p bin
-
-bin/%: %.c
+all: ann_main.c ann_matrix_ops.c ann_matrix_ops.h ann_file_ops.c ann_file_ops.h ann_config.h e_task.elf
 	@echo "CC $<"
-	@gcc $(CFLAGS) $(INCLUDES) -o $@ $< $(LIBS) $(HOST_LIBS) $(HOST_LIB_NAMES)
-
-bin/%.elf: %.c
-	@echo "CC $<"
-	@e-gcc $(CFLAGS) -T ${ELDF} $(INCLUDES) -o $@ $< $(LIBS) $(E_LIBS) $(E_LIB_NAMES)
-
-bin/%.s: %.c
-	@echo "CC $<"
-	@e-gcc $(CFLAGS) -T $(ELDF) $(INCLUDES) -fverbose-asm -S $< -o $@ $(LIBS) $(E_LIBS) $(E_LIB_NAMES)
-
-bin/%.srec: bin/%.elf
-	@e-objcopy --srec-forceS3 --output-target srec $< $@
-
-
-##############################################
-
-cannon: bin bin/host_cannon bin/e_cannon.elf common.h
-
-##############################################
-
-
-
-ann_main: ann_main.c ann_matrix_ops.c ann_matrix_ops.h ann_file_ops.c ann_file_ops.h ann_config.h
-	@echo "CC $<"
-	gcc $< ann_matrix_ops.c ann_file_ops.c -o $@ -Wall -g -fopenmp -lm -I.
+	gcc $(HOST_CFLAGS) $< ann_matrix_ops.c ann_file_ops.c -o $@ $(ELIBS) $(INCLUDES) $(HOST_LIB_NAMES) -D USE_PARALLELLA
 
 %: %.c
 	@echo "CCC $<"
 	gcc $< -o $@ -Wall -g -fopenmp -lm -I.
+
+%.elf: %.c
+	@echo "CC $<"
+	@e-gcc $(E_CFLAGS) -T ${ELDF} -o $@ $< $(LIBS) $(ELIBS) $(E_LIB_NAMES) $(INCLUDES)
 
 clean:
 	rm -r bin

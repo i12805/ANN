@@ -4,7 +4,6 @@
 
 #ifdef USE_PARALLELLA
 #include <e-hal.h>
-#include "common.h"
 #else
 #include <omp.h>
 #endif
@@ -212,15 +211,15 @@ int transpose_matrix(float **src_matrix, int rows, int cols, float **dest_matrix
     \return zero on success, -1 otherwise.
 */
 #ifdef USE_PARALLELLA
-int ALG_MATMUL2D(int M, int N, int P, float** A, float** B, float** C)
+int ALG_MATMUL2D(int M, int N, int K, float** A, float** B, float** C)
 {
     int cores_row, cores_col, i, j, k, return_value = 1;
-    unsigned clr = 0, section;
+    unsigned clr = 0, section, CORES = 16;
     e_platform_t platform;
     e_epiphany_t dev;
 
     section = (unsigned)(K/CORES);
-    remaining_elements = (unsigned)(K%CORES);
+//    unsigned remaining_elements = (unsigned)(K%CORES);
 
     /* Init Epiphany device */
     e_init(NULL);
@@ -256,6 +255,8 @@ int ALG_MATMUL2D(int M, int N, int P, float** A, float** B, float** C)
                     e_write(&dev, cores_row, cores_col, 0x2000, &A[i][(cores_row*platform.cols+cores_col)*section], sizeof(float)*section);
                     e_write(&dev, cores_row, cores_col, 0x4000, &B[(cores_row*platform.cols+cores_col)*section][j], sizeof(float)*section);
                     e_write(&dev, cores_row, cores_col, 0x7000, &clr, sizeof(clr));
+                    e_write(&dev, cores_row, cores_col, 0x7004, &section, sizeof(section));
+                    e_write(&dev, cores_row, cores_col, 0x7008, &CORES, sizeof(CORES));
                 }
             }
             /* Start cores */
@@ -279,6 +280,11 @@ int ALG_MATMUL2D(int M, int N, int P, float** A, float** B, float** C)
                 {
                     e_read(&dev, cores_row, cores_col, 0x6000, &c_temp, sizeof(float));
                     C[i][j] += c_temp;
+                    //   /* CHeCK CORE COMMINICATION */
+                    //   unsigned coreid = 99;
+                    //   e_read(&dev, cores_row, cores_col, 0x700C, &coreid, sizeof(unsigned));
+                    //   printf("Checking core (%d, %d) 0x%03X.\n", cores_row, cores_col, coreid);
+
                 }
             }
             for(k=((CORES-1)*section); k < K; k++)

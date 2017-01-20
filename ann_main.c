@@ -8,7 +8,6 @@
 
 #ifdef USE_PARALLELLA
 #include <e-hal.h>
-#include "common.h"
 #else
 #include <omp.h>
 #endif
