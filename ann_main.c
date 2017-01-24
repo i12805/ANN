@@ -37,14 +37,72 @@ int recognise(int, char**);
 
 int main (int argc, char *argv[])
 {
-   if(argc < 2)
-   {
+    if(argc < 2)
+    {
        printf("Give me at least one input file.\n");
        exit(-1);
-   }
-   
-   printf("recognised: %d.\n", recognise(argc-1, argv));
-   return 0;
+    }
+
+#ifdef TEST
+    pgm_image_t image_data;
+    int i, j;
+    read_image_file(argv[1], &image_data);
+    int input_examples = 1;
+    float **image = allocate_matrix_floats(input_examples, INPUT_LAYER_SIZE, 0);
+
+    for(j = 0; j < INPUT_LAYER_SIZE; j++)
+    {
+       image[0][j] = (float)REMAP_PIXEL(image_data.paiPixels[j]);
+    }
+
+    float **Theta1Copy = allocate_matrix_floats(HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1, 0); 
+    printf("Copy Theta1 ... ");
+    for(i=0; i < HIDDEN_LAYER_SIZE; i++)
+    {
+       for(j=0; j < INPUT_LAYER_SIZE+1; j++)
+       {
+           Theta1Copy[i][j] =  Theta1[i][j];	   
+       }
+    }
+    printf("Done.\n");
+
+    float **tempMatrix = allocate_matrix_floats(INPUT_LAYER_SIZE, HIDDEN_LAYER_SIZE, 0); // holds transposed Theta1
+    float **h1Matrix   = allocate_matrix_floats(input_examples, HIDDEN_LAYER_SIZE, 0); // holds h1
+    float **biasedMatrix = allocate_matrix_floats(input_examples, INPUT_LAYER_SIZE+1, 0);
+
+    if((tempMatrix == NULL) || (h1Matrix == NULL) || (biasedMatrix == NULL))
+    {
+       printf("Error allocating temp, h1, biased.\n");
+       return(-1);
+    }
+
+    add_bias_column_to_matrix(image, input_examples, INPUT_LAYER_SIZE, biasedMatrix);
+    int transpose_status = transpose_matrix(Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE, tempMatrix);
+
+    printf("X and Theta1' matrices OK - %dx%d * %dx%d.\n", input_examples, INPUT_LAYER_SIZE+1, INPUT_LAYER_SIZE, HIDDEN_LAYER_SIZE);
+    int status = ALG_MATMUL2D(input_examples, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE, biasedMatrix, tempMatrix, h1Matrix);
+    if(status != 0)
+    {
+        printf("\nERR from matrix multiplication h1.\n");
+        return(-1);
+    }
+    else
+    {
+        print_matrix(h1Matrix, input_examples, HIDDEN_LAYER_SIZE);
+    }
+
+    printf("Deallocate all local matrices ... ");
+    int dealloc_status = deallocate_matrix_floats(tempMatrix, INPUT_LAYER_SIZE);
+    dealloc_status += deallocate_matrix_floats(biasedMatrix, input_examples);
+    dealloc_status += deallocate_matrix_floats(h1Matrix, input_examples);
+    dealloc_status += deallocate_matrix_floats(Theta1Copy, HIDDEN_LAYER_SIZE); 
+    dealloc_status += deallocate_matrix_floats(image, input_examples);
+    free(image_data.paiPixels);
+    printf("Done - %s.\n", (dealloc_status?"Error!":"OK."));
+#else    
+    recognise(argc-1, argv);
+#endif
+    return 0;
 }
 
 int recognise(int input_examples, char *image_list[])
@@ -67,9 +125,13 @@ int recognise(int input_examples, char *image_list[])
       fileName = image_list[i+1];
 
       /* Read input image and store it in preallocated matrix */
+#if(DEBUG_ON == 1)
       printf("Read file %s - %d of %d... ", fileName, i+1, input_examples);
+#endif
       read_image_file(fileName, &imageData);
+#if(DEBUG_ON == 1)
       printf("Done.\n");
+#endif
 
 //TODO check width, height, colorValue and adjust accordingly parameters, check dimentions!!!
 
@@ -82,18 +144,25 @@ int recognise(int input_examples, char *image_list[])
 #endif
 
       /* Remap/scale pixes values in the range [-1, 1] */
+
+#if(DEBUG_ON == 1)
       printf("Scaling pixel data to [-1, 1] ... ");
+#endif
       for(j = 0; j < INPUT_LAYER_SIZE; j++)
       {
 	   image[i][j] = (float)REMAP_PIXEL(imageData.paiPixels[j]);
       }
+#if(DEBUG_ON == 1)
       printf("Done.\n");
-#if(DEBUG_ON == 1)   
       print_matrix(image, input_examples, INPUT_LAYER_SIZE);
-#endif   
+#endif
+#if(DEBUG_ON == 1)
       printf("Free image data pointer ...");
+#endif
       free(imageData.paiPixels);
+#if(DEBUG_ON == 1)
       printf("Done.\n");
+#endif
    }
 
    float **Theta1Copy, **Theta2Copy;
@@ -106,7 +175,9 @@ int recognise(int input_examples, char *image_list[])
        return(-1);
    }
 
+#if(DEBUG_ON == 1)
    printf("Copy Theta1 ... ");
+#endif
    for(i=0; i < HIDDEN_LAYER_SIZE; i++)
    {
        for(j=0; j < INPUT_LAYER_SIZE+1; j++)
@@ -114,9 +185,12 @@ int recognise(int input_examples, char *image_list[])
            Theta1Copy[i][j] =  Theta1[i][j];	   
        }
    }
+#if(DEBUG_ON == 1)
    printf("Done.\n");
-
+#endif
+#if(DEBUG_ON == 1)
    printf("Copy Theta2 ... ");
+#endif
    for(i=0; i < NUM_LABELS; i++)
    {
        for(j=0; j < HIDDEN_LAYER_SIZE+1; j++)
@@ -124,16 +198,24 @@ int recognise(int input_examples, char *image_list[])
            Theta2Copy[i][j] =  Theta2[i][j];	   
        }
    }
+#if(DEBUG_ON == 1)
    printf("Done.\n");
+#endif
    
+#if(DEBUG_ON == 1)
    printf("BEGIN predict ... \n");
+#endif
    
    int *result = predict(Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1, Theta2Copy, NUM_LABELS, HIDDEN_LAYER_SIZE+1, image, input_examples, INPUT_LAYER_SIZE);
    
+#if(DEBUG_ON == 1)
    printf("Predict status: ... ");
+#endif
    if(result != NULL)
    {     
+#if(DEBUG_ON == 1)
        printf("OK.\n");
+#endif
        for(i = 0; i < input_examples; i++)
        {
            printf("Image %s is %d.\n", image_list[i+1], (result[i]));
@@ -147,12 +229,16 @@ int recognise(int input_examples, char *image_list[])
    }
 
    int dealloc_status = 0;
+#if(DEBUG_ON == 1)
    printf("Deallocate Thetas, image matrix, result ... ");
+#endif
    dealloc_status = deallocate_matrix_floats(Theta1Copy, HIDDEN_LAYER_SIZE); 
    dealloc_status = deallocate_matrix_floats(Theta2Copy, NUM_LABELS);
    dealloc_status = deallocate_matrix_floats(image, input_examples);
    free(result);
+#if(DEBUG_ON == 1)
    printf("Done - %s.\n", (dealloc_status?"Error!":"OK."));
+#endif
 
    return return_value;
 }
@@ -332,8 +418,8 @@ int *predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, i
       if(h2Matrix[i][0] > h2Matrix[i][1]) // A Face
       {
           result[i] = 1;
-          printf("A Face at %d.", i);
 #if(CHECK_LABELS == 1)
+          printf("A Face at %d.", i);
           if(trueLabels[i][0] == 1)
           {
              printf("\tTrue.");
@@ -344,18 +430,21 @@ int *predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, i
              printf("\tFalse.");
              falsePositives++;
           }
-#endif
           printf("\n");
+#endif
       }
       else if(h2Matrix[i][0] == h2Matrix[i][1])
       {
+          result[i] = 99;
+#if(CHECK_LABELS == 1)
           printf("50/50 at %d.\n", i);
+#endif
       }
       else
       {
           result[i] = 2;
-          printf("NOT a Face at %d.", i);
 #if(CHECK_LABELS == 1)
+          printf("NOT a Face at %d.", i);
           if(trueLabels[i][0] == 1)
           {
              printf("\tFalse.");
@@ -366,18 +455,22 @@ int *predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, i
              printf("\tTrue.");
              trueNegatives++;
           }
-#endif
           printf("\n");
+#endif
       }  
     
    }
 
+#if(DEBUG_ON == 1)
    printf("Deallocate all local matrices ... ");
+#endif
    dealloc_status += deallocate_matrix_floats(tempMatrix, Theta2Cols);
    dealloc_status += deallocate_matrix_floats(biasedMatrix, XRows);
    dealloc_status += deallocate_matrix_floats(h1Matrix, XRows);
    dealloc_status += deallocate_matrix_floats(h2Matrix, XRows);
+#if(DEBUG_ON == 1)
    printf("Done - %s.\n", (dealloc_status?"Error!":"OK."));
+#endif
 
 #if(CHECK_LABELS == 1) 
    printf("True Positives: %d.\nTrue Negatives: %d.\nFalse Positives: %d.\nFlase Negatives: %d.\n",\
@@ -386,6 +479,18 @@ int *predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, i
 
    return(result);
 }
+
+/** \fn int sigmoid_gradient_matrix(float **src_matrix, int rows, int cols, float **dest_matrix)
+ *  \brief Computes the gradient of the sigmoid function, evaluated at input parameter
+ *
+ *  dest_mx = sigmoid(src_mx).*(1 - sigmoid(src_mx));
+ *
+ *  \param[in] **src_matrix
+ *  \param[in] rows the rows count of the input/src matrix
+ *  \param[in] cols the columns count of the input/src matrix
+ *  \param[out] **dest_matrix the pointer th the output matrix
+ *  \return zero on success, -1 otherwise.
+ */
 
 int sigmoid_gradient_matrix(float **src_matrix, int rows, int cols, float **dest_matrix)
 {
@@ -410,7 +515,77 @@ int sigmoid_gradient_matrix(float **src_matrix, int rows, int cols, float **dest
    return(0);
 }
 
-void nnCostFunction(float **Theta1, float **Theta2, int input_layer_size, int hidden_layer_size, int num_labels, int input_examples, float **X, float **y, float lambda, float *J, float **gradient)
+/** \fn int nnCostFunction(float **Theta1, float **Theta2, int input_layer_size, int hidden_layer_size, int num_labels, int input_examples, float **X, float **y, float lambda, float *J, float **gradient)
+ * \brief Computes the cost and the gradient of the ANN.
+ *
+ * \param[in] a lot
+ * \param[out] J
+ * \param[out] **gradient
+ * \return nothing
+ */
+
+int nnCostFunction(float **Theta1, float **Theta2, int input_layer_size, int hidden_layer_size, int num_labels, int input_examples, float **X, float **y, float lambda, float *J, float **gradient)
 {
-   return;
+    int i, j, mult_status, transpose_status;
+    float **a1 = allocate_matrix_floats(input_examples, input_layer_size+1, 0);
+    float **z2 = allocate_matrix_floats(input_examples, hidden_layer_size, 0);
+    float **Theta1TR = allocate_matrix_floats(hidden_layer_size, input_layer_size+1, 0);
+
+    /* input matrix calculations */
+    add_bias_column_to_matrix(X, input_examples, input_layer_size+1, a1);
+    transpose_status = transpose_matrix(Theta1, hidden_layer_size, input_layer_size+1, Theta1TR);
+    if(transpose_status != 0)
+    {
+        printf("Error in transposing Theta1'.\n");
+        return(-1);
+    }
+
+    mult_status = ALG_MATMUL2D(input_examples, hidden_layer_size, input_layer_size+1, a1, Theta1TR, z2);
+    if(mult_status != 0)
+    {
+        printf("Error in multiply a1 * Theta1'.\n");
+        return(-1);
+    }
+    /* free some memory for the next stage */
+    deallocate_matrix_floats(Theta1TR, hidden_layer_size);
+
+    float **a2 = allocate_matrix_floats(input_examples, hidden_layer_size, 0);
+    float **a2_biased = allocate_matrix_floats(input_examples, hidden_layer_size+1, 0);
+
+    /* 1-st hidden layer calculation */
+    sigmoid_matrix(z2, input_examples, hidden_layer_size, a2);
+    add_bias_column_to_matrix(a2, input_examples, hidden_layer_size+1, a2_biased);
+
+    deallocate_matrix_floats(a2, input_examples);
+    deallocate_matrix_floats(z2, input_examples);
+
+    float **z3 = allocate_matrix_floats(input_examples, num_labels, 0);
+    float **Theta2TR = allocate_matrix_floats(num_labels, hidden_layer_size+1, 0);
+    
+    /* output layer, i.e. hypothesis calculations */
+    transpose_status = transpose_matrix(Theta2, num_labels, hidden_layer_size+1, Theta2TR);
+    if(transpose_status != 0)
+    {
+        printf("Error in transposing Theta2'.\n");
+        return(-1);
+    }
+    
+    mult_status = ALG_MATMUL2D(input_examples, num_labels, hidden_layer_size+1, a2_biased, Theta2TR, z3);
+    if(mult_status != 0)
+    {
+        printf("Error in multiply a2 * Theta2'.\n");
+        return(-1);
+    }
+
+    float **a3 = allocate_matrix_floats(input_examples, num_labels, 0);
+    sigmoid_matrix(z3,input_examples, num_labels, a3);
+
+    /* free some memory for the next stage */
+    deallocate_matrix_floats(Theta2TR, hidden_layer_size);
+    deallocate_matrix_floats(z3, hidden_layer_size);
+
+    /* calculate cost */
+
+
+    return;
 }

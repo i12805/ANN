@@ -17,7 +17,7 @@ E_LIB_NAMES = -le-lib -lm
 
 all: ann_main.c ann_matrix_ops.c ann_matrix_ops.h ann_file_ops.c ann_file_ops.h ann_config.h e_task.elf
 	@echo "CC $<"
-	gcc $(HOST_CFLAGS) $< ann_matrix_ops.c ann_file_ops.c -o $@ $(ELIBS) $(INCLUDES) $(HOST_LIB_NAMES) -D USE_PARALLELLA
+	gcc $(HOST_CFLAGS) $< ann_matrix_ops.c ann_file_ops.c -o $@ $(ELIBS) $(INCLUDES) $(HOST_LIB_NAMES) #-D USE_PARALLELLA
 
 %: %.c
 	@echo "CCC $<"

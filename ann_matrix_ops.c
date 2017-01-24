@@ -219,7 +219,7 @@ int ALG_MATMUL2D(int M, int N, int K, float** A, float** B, float** C)
     e_epiphany_t dev;
 
     section = (unsigned)(K/CORES);
-//    unsigned remaining_elements = (unsigned)(K%CORES);
+    unsigned remaining_elements = (unsigned)(K%CORES);
 
     /* Init Epiphany device */
     e_init(NULL);
@@ -252,8 +252,8 @@ int ALG_MATMUL2D(int M, int N, int K, float** A, float** B, float** C)
             {
                 for(cores_col = 0; cores_col < platform.cols; cores_col++)
                 {
-                    e_write(&dev, cores_row, cores_col, 0x2000, &A[i][(cores_row*platform.cols+cores_col)*section], sizeof(float)*section);
-                    e_write(&dev, cores_row, cores_col, 0x4000, &B[(cores_row*platform.cols+cores_col)*section][j], sizeof(float)*section);
+                    e_write(&dev, cores_row, cores_col, 0x2000, A[i][(cores_row*platform.cols+cores_col)*section], sizeof(float)*section);
+                    e_write(&dev, cores_row, cores_col, 0x4000, B[(cores_row*platform.cols+cores_col)*section][j], sizeof(float)*section);
                     e_write(&dev, cores_row, cores_col, 0x7000, &clr, sizeof(clr));
                     e_write(&dev, cores_row, cores_col, 0x7004, &section, sizeof(section));
                     e_write(&dev, cores_row, cores_col, 0x7008, &CORES, sizeof(CORES));
@@ -287,7 +287,7 @@ int ALG_MATMUL2D(int M, int N, int K, float** A, float** B, float** C)
 
                 }
             }
-            for(k=((CORES-1)*section); k < K; k++)
+            for(k=((CORES*section)-1); k < K; k++)
             {
                 C[i][j] += A[i][k] * B[k][j];
             }
