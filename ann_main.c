@@ -100,7 +100,20 @@ int main (int argc, char *argv[])
     free(image_data.paiPixels);
     printf("Done - %s.\n", (dealloc_status?"Error!":"OK."));
 #else    
-    recognise(argc-1, argv);
+    argc--;
+    argv++;
+    int label = recognise(argc, argv);
+    if(label < 0)
+    {
+        printf("Error in recognition. Piss off!\n");
+        return(-1);
+    }
+    /* TODO Display the image the detected face was at */
+    if(label == 1)
+    {
+        display_image_file("images/test.jpeg", 320, 240);
+        
+    }
 #endif
     return 0;
 }
@@ -122,7 +135,7 @@ int recognise(int input_examples, char *image_list[])
 
    for(i = 0; i < input_examples; i++)
    {
-      fileName = image_list[i+1];
+      fileName = image_list[i];
 
       /* Read input image and store it in preallocated matrix */
 #if(DEBUG_ON == 1)
@@ -218,9 +231,9 @@ int recognise(int input_examples, char *image_list[])
 #endif
        for(i = 0; i < input_examples; i++)
        {
-           printf("Image %s is %d.\n", image_list[i+1], (result[i]));
+           printf("Image %s is %d.\n", image_list[i], (result[i]));
        }
-       return_value = 0;
+       return_value = result[0];
    }
    else
    {
