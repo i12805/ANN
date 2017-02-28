@@ -1,13 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <SDL2/SDL.h>
-#include <SDL2/SDL_image.h>
-#include "ann_file_ops.h"
 
 #define WIDTH 320
 #define HEIGHT 240
 
-#define GET_BINARY
 
 int main(int argc, char *argv[])
 {
@@ -19,12 +16,14 @@ int main(int argc, char *argv[])
    int width=0, height=0, maxColorValue=0;
    char imageType[3];
 
-   /* initialize window to display the image */
+   /* initialize SDL library */
    if(SDL_Init(SDL_INIT_VIDEO) < 0)
    {
         printf("Error SDL init: %s.\n", SDL_GetError());
 	return(-1);
    }
+
+   /* initialize window to display the image */
    SDL_Window *win = SDL_CreateWindow("Drink more tea!", 100, 100, WIDTH, HEIGHT, SDL_WINDOW_SHOWN);
    if (win == NULL)
    {
@@ -43,16 +42,30 @@ int main(int argc, char *argv[])
         return(-1);
    }
 
+   /* Create RGBA masks for the new image viasualization */
    Uint32 rmask = 0x000000FFU;
    Uint32 gmask = 0x0000FF00U;
    Uint32 bmask = 0x00FF0000U;
    Uint32 amask = 0x00000000U;
    
+   int tile_width = 64;
+   int tile_height = 60;
+   SDL_Rect target_rect = { .x=0, .y=0, .w=tile_width, .h=tile_height };
    /* The new surface, that shall update the window */
    SDL_Surface *frame = NULL;
-   IMG_Init(IMG_INIT_JPG | IMG_INIT_TIF | IMG_INIT_PNG);
+   SDL_Surface *tile_surface = SDL_CreateRGBSurface(0, tile_width, tile_height, 32, rmask, gmask, bmask, amask);
+   if(tile_surface == NULL)
+   {
+       printf("Error creating tile surface: %s\n", SDL_GetError());
+       SDL_DestroyWindow(win);
+       SDL_FreeSurface(screen);
+       SDL_Quit();
+       return(-1);
+   }
 
-  char *pixels = (char *)malloc(WIDTH*HEIGHT*sizeof(char)); 
+
+   /* Allocate memory for holding pixel data from captured frame */
+   char *pixels = (char *)malloc(WIDTH*HEIGHT*sizeof(char)); 
    if(pixels == NULL)
    {
       printf("Cannot allocate memory.\n");
@@ -78,11 +91,11 @@ int main(int argc, char *argv[])
 	           break;
 	   }
  	}
-
+   /* Capture frame from the web camera */
    system("streamer -c /dev/video0 -f pgm -q -o images/test.pgm");
    SDL_Delay(25);
 
-#ifdef GET_BINARY
+   /* Read captured .pgm image file, get type, weight, height, max color and pixel data */
    pFile = fopen(fileName, "rb");
    if(pFile == NULL)
    {
@@ -110,46 +123,54 @@ int main(int argc, char *argv[])
        return(-1);
    }
 
-        unsigned int u32Pixels[width*height];
-        for(int i = 0; i < width * height; i++)
-        {
-             u32Pixels[i] = (unsigned)0x00<<24 |
-                            (unsigned)pixels[i]<<16 |
-                            (unsigned)pixels[i]<< 8 |
-                            (unsigned)pixels[i];
-        }
+   /* Create array 64x60 for holding one tile of the source image */
+   unsigned char tile_pixels[tile_height][tile_width];
+
+   /* Create pixel array for holding pixel data for visualization purposes - 32bit GRBA type */
+   unsigned int u32Pixels[width*height];
+
+   for(int i = 0; i < width * height; i++)
+   {
+        u32Pixels[i] = (unsigned)0x00<<24 |
+                       (unsigned)pixels[i]<<16 |
+                       (unsigned)pixels[i]<< 8 |
+                       (unsigned)pixels[i];
+   }
 
 	int depth = 32;
 	int pitch = 4*width;
 
-       frame = SDL_CreateRGBSurfaceFrom((void*)u32Pixels, width, height, depth, pitch, rmask, gmask, bmask, amask);
+   /* Construct surface from captured pixel data. This is working surface. */
+   frame = SDL_CreateRGBSurfaceFrom((void*)u32Pixels, width, height, depth, pitch, rmask, gmask, bmask, amask);
 
-#else
-SDL_RWops *rwop = SDL_RWFromFile("images/test.pgm", "rb");
-frame = IMG_LoadPNM_RW(rwop);
-#endif	
- 
-	if(frame == NULL)
-	{
-		  printf("Error creating the frame: %s.\n", IMG_GetError());
-		  return(-1);
-	} 
+   if(frame == NULL)
+   {
+	  printf("Error creating the frame: %s.\n", SDL_GetError());
+	  return(-1);
+   } 
 
-	SDL_BlitSurface(frame, NULL, screen, NULL);
+   //SDL_BlitSurface(frame, NULL, screen, NULL);
 
-        /* Create new Rect obj to hold scaled image */
-        //SDL_Rect target_rect = { .x=10, .y=10, .w=64, .h=60 };
-        //SDL_BlitScaled(frame, NULL, screen, &target_rect);
-	SDL_UpdateWindowSurface(win);
+
+   SDL_BlitScaled(frame, NULL, tile_surface, &target_rect);
+   SDL_BlitSurface(tile_surface, NULL, screen, &target_rect); 
+
+   SDL_UpdateWindowSurface(win);
    
    } /* End of while(!done) */
 
-    IMG_Quit();  
+     // ((int*)(tile_surface->pixels))[i*60+j] & 0xFF
+
     free(pixels);
+    SDL_FreeSurface(tile_surface);
     SDL_FreeSurface(frame);
     SDL_FreeSurface(screen);
     SDL_DestroyWindow(win);
     SDL_Quit();
    return 0;
 }
+
+/* Compile with IMG support - include SDL2/SDL2_image.h */
+// gcc -std=c99 -g -Wall source.c -o display_jpg -D_REENTRANT -I. -I/usr/include/SDL2 -lSDL2 -lSDL2_image
+/* Compile without IMG */
 // gcc -std=c99 -g -Wall source.c -o display_jpg -D_REENTRANT -I. -I/usr/include/SDL2 -lSDL2 -lSDL2_image

@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <SDL2/SDL.h>
 #include "ann_config.h"
 #include "ann_matrix_ops.h"
 #include "ann_file_ops.h"
@@ -18,6 +19,9 @@
 #define IMG_WIDTH 64
 #define IMG_HEIGHT 60
 
+#define DISPLAY_WIN_WIDTH 320
+#define DISPLAY_WIN_HEIGHT 240
+
 /* Configure ANN topology */
 #define INPUT_LAYER_SIZE (IMG_WIDTH * IMG_HEIGHT)
 #define HIDDEN_LAYER_SIZE 25
@@ -28,11 +32,14 @@
 #define DEBUG_ON 0
 #define CHECK_LABELS 0
 
+int tile_width  = 64;
+int tile_height = 60;
+
 void sigmoid_matrix(float**, int, int, float**);
 void add_bias_column_to_matrix(float **src_matrix, int rows, int cols, float **dest_matrix);
 int *predict(float**, int, int, float**, int, int, float**, int, int);
-int recognise(int, char**);
-
+int recognise_by_file(int, char**);
+int recognise_by_pix_data(int input_examples, char *image_pixels);
 
 
 int main (int argc, char *argv[])
@@ -43,82 +50,336 @@ int main (int argc, char *argv[])
        exit(-1);
     }
 
-#ifdef TEST
-    pgm_image_t image_data;
-    int i, j;
-    read_image_file(argv[1], &image_data);
-    int input_examples = 1;
-    float **image = allocate_matrix_floats(input_examples, INPUT_LAYER_SIZE, 0);
+   char *fileName = argv[1];
+   FILE *pFile;
+   char var;
+   unsigned i=0, ret=0;
+   SDL_bool done = SDL_FALSE;
+   int width=0, height=0, maxColorValue=0;
+   char imageType[3];
 
-    for(j = 0; j < INPUT_LAYER_SIZE; j++)
-    {
-       image[0][j] = (float)REMAP_PIXEL(image_data.paiPixels[j]);
-    }
+   /* init SDL lib */
+   if(SDL_Init(SDL_INIT_VIDEO) < 0)
+   {
+        printf("Error SDL init: %s.\n", SDL_GetError());
+	return(-1);
+   }
+   /* initialize window to display the image */
+   SDL_Window *win = SDL_CreateWindow("Drink more tea!", 100, 100, DISPLAY_WIN_WIDTH, DISPLAY_WIN_HEIGHT, SDL_WINDOW_SHOWN);
+   if (win == NULL)
+   {
+	printf("SDL_CreateWindow Error: %s.\n", SDL_GetError());
+	SDL_Quit();
+	return(-1);
+   }    
 
-    float **Theta1Copy = allocate_matrix_floats(HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1, 0); 
-    printf("Copy Theta1 ... ");
-    for(i=0; i < HIDDEN_LAYER_SIZE; i++)
+    /* renderer for rendering texture and rectangle */
+    SDL_Renderer *ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
+    if (ren == NULL)
     {
+        SDL_DestroyWindow(win);
+        printf("SDL_CreateRenderer Error: %s", SDL_GetError());
+        SDL_Quit();
+        return(-1);
+     }
+ 
+
+     /* Get the windos Surface */
+     SDL_Surface *screen = SDL_GetWindowSurface(win);
+     if(screen == NULL)
+     {
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        printf("Error GetWindowSurface: %s.\n", SDL_GetError());
+        SDL_Quit();
+        return(-1);
+     }
+
+     Uint32 rmask = 0x000000FFU;
+     Uint32 gmask = 0x0000FF00U;
+     Uint32 bmask = 0x00FF0000U;
+     Uint32 amask = 0x00000000U;
+
+     SDL_Surface *tile_surface = SDL_CreateRGBSurface(0, tile_width, tile_height, 32, rmask, gmask, bmask, amask);
+
+     if(tile_surface == NULL)
+     {
+         printf("Error creating tile surface: %s\n", SDL_GetError());
+         SDL_FreeSurface(screen);
+         SDL_DestroyRenderer(ren);
+         SDL_DestroyWindow(win);
+         SDL_Quit();
+         return(-1);
+     }
+
+     /* Create texture to be rendered for viasualization of the captured image and box */
+     SDL_Texture *tex = SDL_CreateTextureFromSurface(ren, screen);
+     SDL_FreeSurface(screen);
+     //SDL_FreeSurface(frame);
+     if (tex == NULL)
+     {
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        printf("SDL_CreateTextureFromSurface Error: %s.\n", SDL_GetError());
+        SDL_Quit();
+        return(-1);
+     }
+ 
+     /* Create new Rect obj to hold scaled image */
+     SDL_Rect target_rect = { .x = 0, .y = 0, .w = tile_width, .h = tile_height };
+
+     /* Rectangle to be displayed as a selection box */
+     SDL_Rect bounding_box = { .x=10, .y=10, .w=tile_width, .h=tile_height };
+
+     /* bounding box drawcolor */
+     SDL_SetRenderDrawColor(ren, 250, 250, 0, SDL_ALPHA_OPAQUE); // opaque = 255, color = yellow
+     
+     /* Allocate memory for captured image pixels */
+     char *pixels = (char *)malloc(DISPLAY_WIN_WIDTH*DISPLAY_WIN_HEIGHT*sizeof(char)); 
+     if(pixels == NULL)
+     {
+        printf("Cannot allocate memory.\n");
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+        return(-1);
+     }
+
+     /* Event loop; interrupted by ESC key-press */
+     while(!done)
+     {
+	SDL_Event event;
+        while (SDL_PollEvent(&event))
+	{
+	   switch (event.type)
+	   {
+               case SDL_KEYDOWN:
+	          if (event.key.keysym.sym == SDLK_ESCAPE)
+	          {
+		      done = SDL_TRUE;
+	          }
+	          break;
+	       case SDL_QUIT:
+	           done = SDL_TRUE;
+	           break;
+	   }
+ 	}
+
+     system("streamer -c /dev/video0 -f pgm -q -o images/test.pgm");
+     SDL_Delay(50);
+
+     /* Read captured .pgm image file, get type, weight, height, max color and pixel data */
+     pFile = fopen(fileName, "rb");
+     if(pFile == NULL)
+     {
+        printf("Cannot open %s.\n", fileName);
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+        return(-1);
+     }
+
+     fscanf(pFile, "%s", imageType);
+     fscanf(pFile, "%d", &width);
+     fscanf(pFile, "%d", &height);
+     fscanf(pFile, "%d", &maxColorValue);
+
+     i = 0;
+     while(!feof(pFile))
+     {
+        ret += fscanf(pFile, "%c", &var); // get pixels as char
+        pixels[i++] = var;
+     }
+     fclose(pFile);
+   
+   
+     if(ret == 0) // nothing has bee read */
+     {
+         printf("Nothing has been read from file.\n");
+         SDL_DestroyRenderer(ren);
+         SDL_DestroyWindow(win);
+         SDL_Quit();
+         return(-1);
+     }
+
+     unsigned int u32Pixels[width*height];
+     for(int i = 0; i < width * height; i++)
+     {
+          u32Pixels[i] = (unsigned)(
+                         (unsigned)0x00<<24 |
+                         (unsigned)pixels[i]<<16 |
+                         (unsigned)pixels[i]<< 8 |
+                         (unsigned)pixels[i]);
+     }
+
+     int depth = 32;
+     int pitch = 4*width;
+
+     /* Construct surface from captured pixel data. This is working surface. */
+     SDL_Surface *frame = SDL_CreateRGBSurfaceFrom((void*)u32Pixels, width, height, depth, pitch, rmask, gmask, bmask, amask);
+ 
+     if(frame == NULL)
+     {
+          printf("Error creating the frame: %s.\n", SDL_GetError());
+          return(-1);
+     }
+ 
+     SDL_BlitScaled(frame, NULL, tile_surface, &target_rect);
+     SDL_FreeSurface(frame);
+
+//     int recognition = recognise_by_pix_data(1, (char*)pixels);
+
+  //   SDL_UpdateTexture(tex, NULL, (void*)u32Pixels, pitch);
+     SDL_UpdateTexture(tex, NULL, tile_surface->pixels, (4*tile_width));
+     
+     SDL_RenderClear(ren);
+     /* Draw the texture */
+     SDL_RenderCopy(ren, tex, NULL, NULL);
+     /* Draw the bounding box */
+     SDL_RenderDrawRect(ren, &bounding_box);
+     /* Update the screen */
+     SDL_RenderPresent(ren);
+
+   
+   } /* End of while(!done) */
+
+   
+    free(pixels);
+    SDL_FreeSurface(tile_surface);
+    SDL_DestroyTexture(tex);
+    SDL_DestroyRenderer(ren);
+    SDL_DestroyWindow(win);
+    SDL_Quit();
+    return 0;
+
+// gcc -std=c99 -g -Wall display_jpg.c ann_file_ops.c -o display_jpg -DREENTRANT -I. -I/usr/include/SDL2 -lSDL2 -lSDL2_image
+    return 0;
+}
+
+/** \fn int recognise_by_pix_data(int input_examples, char *image_pixels)
+    \brief Wrapper function, performing prediction, based on input image raw pixels.
+
+    \param[in] input_examples number of input image files.
+    \param[in] image_list pointer to or array of image's pixels.
+    \return the result of prediction. For now it is 1 for a face and 2 if not.
+*/
+int recognise_by_pix_data(int input_examples, char *image_pixels)
+{
+   float **image;
+   int i, j, return_value = 1;
+   
+   image = allocate_matrix_floats(input_examples, INPUT_LAYER_SIZE, 0);
+   if(image == NULL)
+   {
+      printf("Error allocating image.\n");
+      return(-1);
+   }
+
+   for(i = 0; i < input_examples; i++)
+   {
+
+      /* Normalize pixes values in the range [-1, 1] */
+
+#if(DEBUG_ON == 1)
+      printf("Normalizing pixel data to [-1, 1] ... ");
+#endif
+      for(j = 0; j < INPUT_LAYER_SIZE; j++)
+      {
+	   image[i][j] = (float)REMAP_PIXEL(image_pixels[j]);
+      }
+#if(DEBUG_ON == 1)
+      printf("Done.\n");
+      print_matrix(image, input_examples, INPUT_LAYER_SIZE);
+#endif
+   }
+
+   float **Theta1Copy, **Theta2Copy;
+
+   Theta1Copy = allocate_matrix_floats(HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1, 0); 
+   Theta2Copy = allocate_matrix_floats(NUM_LABELS, HIDDEN_LAYER_SIZE+1, 0);
+   if((Theta1Copy == NULL) || (Theta2Copy == NULL))
+   {
+       printf("Error allocating Theta copies.\n");
+       return(-1);
+   }
+
+#if(DEBUG_ON == 1)
+   printf("Copy Theta1 ... ");
+#endif
+   for(i=0; i < HIDDEN_LAYER_SIZE; i++)
+   {
        for(j=0; j < INPUT_LAYER_SIZE+1; j++)
        {
            Theta1Copy[i][j] =  Theta1[i][j];	   
        }
-    }
-    printf("Done.\n");
-
-    float **tempMatrix = allocate_matrix_floats(INPUT_LAYER_SIZE, HIDDEN_LAYER_SIZE, 0); // holds transposed Theta1
-    float **h1Matrix   = allocate_matrix_floats(input_examples, HIDDEN_LAYER_SIZE, 0); // holds h1
-    float **biasedMatrix = allocate_matrix_floats(input_examples, INPUT_LAYER_SIZE+1, 0);
-
-    if((tempMatrix == NULL) || (h1Matrix == NULL) || (biasedMatrix == NULL))
-    {
-       printf("Error allocating temp, h1, biased.\n");
-       return(-1);
-    }
-
-    add_bias_column_to_matrix(image, input_examples, INPUT_LAYER_SIZE, biasedMatrix);
-    int transpose_status = transpose_matrix(Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE, tempMatrix);
-
-    printf("X and Theta1' matrices OK - %dx%d * %dx%d.\n", input_examples, INPUT_LAYER_SIZE+1, INPUT_LAYER_SIZE, HIDDEN_LAYER_SIZE);
-    int status = ALG_MATMUL2D(input_examples, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE, biasedMatrix, tempMatrix, h1Matrix);
-    if(status != 0)
-    {
-        printf("\nERR from matrix multiplication h1.\n");
-        return(-1);
-    }
-    else
-    {
-        print_matrix(h1Matrix, input_examples, HIDDEN_LAYER_SIZE);
-    }
-
-    printf("Deallocate all local matrices ... ");
-    int dealloc_status = deallocate_matrix_floats(tempMatrix, INPUT_LAYER_SIZE);
-    dealloc_status += deallocate_matrix_floats(biasedMatrix, input_examples);
-    dealloc_status += deallocate_matrix_floats(h1Matrix, input_examples);
-    dealloc_status += deallocate_matrix_floats(Theta1Copy, HIDDEN_LAYER_SIZE); 
-    dealloc_status += deallocate_matrix_floats(image, input_examples);
-    free(image_data.paiPixels);
-    printf("Done - %s.\n", (dealloc_status?"Error!":"OK."));
-#else    
-    argc--;
-    argv++;
-    int label = recognise(argc, argv);
-    if(label < 0)
-    {
-        printf("Error in recognition. Piss off!\n");
-        return(-1);
-    }
-    /* TODO Display the image the detected face was at */
-    if(label == 1)
-    {
-        display_image_file("images/test.jpeg", 320, 240);
-        
-    }
+   }
+#if(DEBUG_ON == 1)
+   printf("Done.\n");
 #endif
-    return 0;
+#if(DEBUG_ON == 1)
+   printf("Copy Theta2 ... ");
+#endif
+   for(i=0; i < NUM_LABELS; i++)
+   {
+       for(j=0; j < HIDDEN_LAYER_SIZE+1; j++)
+       {
+           Theta2Copy[i][j] =  Theta2[i][j];	   
+       }
+   }
+#if(DEBUG_ON == 1)
+   printf("Done.\n");
+#endif
+   
+#if(DEBUG_ON == 1)
+   printf("BEGIN predict ... \n");
+#endif
+   
+   int *result = predict(Theta1Copy, HIDDEN_LAYER_SIZE, INPUT_LAYER_SIZE+1, Theta2Copy, NUM_LABELS, HIDDEN_LAYER_SIZE+1, image, input_examples, INPUT_LAYER_SIZE);
+   
+#if(DEBUG_ON == 1)
+   printf("Predict status: ... ");
+#endif
+   if(result != NULL)
+   {     
+#if(DEBUG_ON == 1)
+       printf("OK.\n");
+#endif
+       for(i = 0; i < input_examples; i++)
+       {
+           printf("Image %d is %d.\n", i, (result[i]));
+       }
+       return_value = result[0];
+   }
+   else
+   {
+      printf("Error.\n");
+      return_value = -1;
+   }
+
+   int dealloc_status = 0;
+#if(DEBUG_ON == 1)
+   printf("Deallocate Thetas, image matrix, result ... ");
+#endif
+   dealloc_status = deallocate_matrix_floats(Theta1Copy, HIDDEN_LAYER_SIZE); 
+   dealloc_status = deallocate_matrix_floats(Theta2Copy, NUM_LABELS);
+   dealloc_status = deallocate_matrix_floats(image, input_examples);
+   free(result);
+#if(DEBUG_ON == 1)
+   printf("Done - %s.\n", (dealloc_status?"Error!":"OK."));
+#endif
+
+   return return_value;
 }
 
-int recognise(int input_examples, char *image_list[])
+
+/** \fn int recognise_by_file(int input_examples, char *image_list[])
+    \brief Wrapper function, performing prediction, based on input image file.
+
+    \param[in] input_examples number of input image files.
+    \param[in] image_list pointer to or array of image file names.
+    \return the result of prediction. For now it is 1 for a face and 2 if not.
+*/
+int recognise_by_file(int input_examples, char *image_list[])
 {
    float **image;
    char *fileName;
