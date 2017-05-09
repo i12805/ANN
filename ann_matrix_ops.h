@@ -3,7 +3,7 @@
 
 float **allocate_matrix_floats(int, int, float);
 int  deallocate_matrix_floats(float**, int);
-int init_matrix(float**, int, int);
+int init_matrix(float**, int, int, float);
 void print_matrix(float**, int, int);
 
 void allocate_matrix_char(char***, int, int);

@@ -3,7 +3,9 @@
 #include <string.h>
 #include <math.h>
 #include <SDL2/SDL.h>
+#ifndef TEST
 #include "ann_config.h"
+#endif
 #include "ann_matrix_ops.h"
 #include "ann_file_ops.h"
 
@@ -22,15 +24,25 @@
 #define DISPLAY_WIN_WIDTH 320
 #define DISPLAY_WIN_HEIGHT 240
 
+#define FACES_FOUND_MAX 500
+
 /* Configure ANN topology */
 #define INPUT_LAYER_SIZE (IMG_WIDTH * IMG_HEIGHT)
-#define HIDDEN_LAYER_SIZE 25
+#define HIDDEN_LAYER_1_SIZE 25
+#define HIDDEN_LAYER_2_SIZE 25
 #define NUM_LABELS 2
 #define INPUT_EXAMPLES 42
 
 /* For debug purposes */
-#define DEBUG_ON 0
+#define DEBUG_ON 0 
 #define CHECK_LABELS 0
+
+#ifdef TEST
+const float Theta1[1][1];
+const float Theta2[1][1];
+#endif
+#define HIDDEN_LAYER_SIZE 25
+
 
 int tile_width  = 64;
 int tile_height = 60;
@@ -57,6 +69,8 @@ int main (int argc, char *argv[])
    SDL_bool done = SDL_FALSE;
    int width=0, height=0, maxColorValue=0;
    char imageType[3];
+    Uint32 u32SmallTexPxls[tile_height*tile_width];
+   unsigned faces_found = 0;
 
    /* init SDL lib */
    if(SDL_Init(SDL_INIT_VIDEO) < 0)
@@ -84,7 +98,7 @@ int main (int argc, char *argv[])
      }
  
 
-     /* Get the windos Surface */
+     /* Get the windows Surface */
      SDL_Surface *screen = SDL_GetWindowSurface(win);
      if(screen == NULL)
      {
@@ -95,11 +109,13 @@ int main (int argc, char *argv[])
         return(-1);
      }
 
+     /* Create RGB masks of the image being displayed */
      Uint32 rmask = 0x000000FFU;
      Uint32 gmask = 0x0000FF00U;
      Uint32 bmask = 0x00FF0000U;
      Uint32 amask = 0x00000000U;
 
+     /* Create surface for holding 64x60 tiles */
      SDL_Surface *tile_surface = SDL_CreateRGBSurface(0, tile_width, tile_height, 32, rmask, gmask, bmask, amask);
 
      if(tile_surface == NULL)
@@ -115,8 +131,10 @@ int main (int argc, char *argv[])
      /* Create texture to be rendered for viasualization of the captured image and box */
      SDL_Texture *tex = SDL_CreateTextureFromSurface(ren, screen);
      SDL_FreeSurface(screen);
-     //SDL_FreeSurface(frame);
-     if (tex == NULL)
+     SDL_Texture *tex_small = SDL_CreateTextureFromSurface(ren, tile_surface);
+     //SDL_FreeSurface(tile_surface);
+
+     if ( (tex == NULL) || (tex_small == NULL) )
      {
         SDL_DestroyRenderer(ren);
         SDL_DestroyWindow(win);
@@ -129,7 +147,7 @@ int main (int argc, char *argv[])
      SDL_Rect target_rect = { .x = 0, .y = 0, .w = tile_width, .h = tile_height };
 
      /* Rectangle to be displayed as a selection box */
-     SDL_Rect bounding_box = { .x=10, .y=10, .w=tile_width, .h=tile_height };
+     SDL_Rect bounding_box = { .x = 0, .y = 0, .w = tile_width, .h = tile_height };
 
      /* bounding box drawcolor */
      SDL_SetRenderDrawColor(ren, 250, 250, 0, SDL_ALPHA_OPAQUE); // opaque = 255, color = yellow
@@ -143,6 +161,15 @@ int main (int argc, char *argv[])
         SDL_DestroyWindow(win);
         SDL_Quit();
         return(-1);
+     }
+
+
+     /* allocate 64x60 matrix for holding extracted pixels */		
+     char *current_tile = (char *)malloc(tile_height*tile_width*sizeof(char));
+     if( current_tile == NULL )
+     {
+        printf("Error allocating memory for the current pixels tile block.\n");
+	return(-1);
      }
 
      /* Event loop; interrupted by ESC key-press */
@@ -165,8 +192,8 @@ int main (int argc, char *argv[])
 	   }
  	}
 
-     system("streamer -c /dev/video0 -f pgm -q -o images/test.pgm");
-     SDL_Delay(50);
+        system("streamer -c /dev/video0 -f pgm -q -o images/test.pgm");
+        SDL_Delay(25);
 
      /* Read captured .pgm image file, get type, weight, height, max color and pixel data */
      pFile = fopen(fileName, "rb");
@@ -192,15 +219,62 @@ int main (int argc, char *argv[])
      }
      fclose(pFile);
    
-   
-     if(ret == 0) // nothing has bee read */
+
+     if(ret == 0) // nothing has been red */
      {
-         printf("Nothing has been read from file.\n");
+         printf("Nothing has been red from the capture file.\n");
          SDL_DestroyRenderer(ren);
          SDL_DestroyWindow(win);
          SDL_Quit();
          return(-1);
      }
+
+#if 0
+     /* walk the image, asses the presense of a face */
+     for(int i = 0; i < (height-tile_height); i+=10)
+     {
+ 	for(int j = 0; j < (width-tile_width); j+=10)
+	{
+		for(int k = 0; k < tile_height; k++)
+		{
+			for(int m = 0; m < tile_width; m++)
+			{
+				char cp =  pixels[(i+k)*(width)+(j+m)];
+
+				current_tile[k*tile_width + m] = cp;
+				u32SmallTexPxls[k*tile_width + m] = (Uint32)(
+                         (unsigned)0x00<<24 |
+                         (unsigned)cp<<16 |
+                         (unsigned)cp<< 8 |
+                         (unsigned)cp);
+
+				
+			}
+		}
+		unsigned res = recognise_by_pix_data(1, current_tile);
+		if( (res > 999) && (faces_found < FACES_FOUND_MAX) )
+		{
+			faces_found++;
+			bbox_xy[faces_found][0] = j;
+			bbox_xy[faces_found][1] = i;
+		}
+		else
+		{
+	//		break;
+		}
+
+		SDL_UpdateTexture(tex_small, NULL, (void*)u32SmallTexPxls, (4*tile_width));
+		target_rect.x = j;
+		target_rect.y = i;
+		SDL_RenderCopy(ren, tex_small, NULL, &target_rect);
+		SDL_RenderDrawRect(ren, &target_rect);
+		SDL_RenderPresent(ren);	
+		SDL_RenderCopy(ren, tex_small, NULL, &target_rect);
+		SDL_RenderPresent(ren);	
+		SDL_Delay(30);	
+	}
+     }
+#endif
 
      unsigned int u32Pixels[width*height];
      for(int i = 0; i < width * height; i++)
@@ -223,20 +297,36 @@ int main (int argc, char *argv[])
           printf("Error creating the frame: %s.\n", SDL_GetError());
           return(-1);
      }
- 
+
+     //SDL_SetSurfaceBlendMode(frame, SDL_BLENDMODE_NONE); 
      SDL_BlitScaled(frame, NULL, tile_surface, &target_rect);
      SDL_FreeSurface(frame);
+     //SDL_BlitSurface(tile_surface, NULL, screen, &target_rect);
 
-//     int recognition = recognise_by_pix_data(1, (char*)pixels);
-
-  //   SDL_UpdateTexture(tex, NULL, (void*)u32Pixels, pitch);
-     SDL_UpdateTexture(tex, NULL, tile_surface->pixels, (4*tile_width));
+     SDL_UpdateTexture(tex, NULL, (void*)u32Pixels, pitch);
+     SDL_UpdateTexture(tex_small, &target_rect, tile_surface->pixels, (4*tile_width));
      
      SDL_RenderClear(ren);
      /* Draw the texture */
      SDL_RenderCopy(ren, tex, NULL, NULL);
-     /* Draw the bounding box */
-     SDL_RenderDrawRect(ren, &bounding_box);
+     SDL_RenderCopy(ren, tex_small, NULL, &target_rect);
+      
+
+     unsigned res = recognise_by_pix_data(1, tile_surface->pixels);
+     if(res == 1)
+     {
+     	/* draw bounding boxes, where a face has been found */
+        SDL_SetRenderDrawColor(ren, 250, 250, 0, SDL_ALPHA_OPAQUE); // opaque = 255, color = yellow
+     	SDL_RenderDrawRect(ren, &bounding_box);
+     }
+     else
+     {
+	SDL_SetRenderDrawColor(ren, 0, 0, 0, SDL_ALPHA_OPAQUE); // opaque = 255, color = black
+     	SDL_RenderDrawRect(ren, &bounding_box);
+
+     }
+  //   SDL_UpdateWindowSurface(win);
+     
      /* Update the screen */
      SDL_RenderPresent(ren);
 
@@ -244,16 +334,19 @@ int main (int argc, char *argv[])
    } /* End of while(!done) */
 
    
+    free(current_tile);
     free(pixels);
+    
     SDL_FreeSurface(tile_surface);
     SDL_DestroyTexture(tex);
     SDL_DestroyRenderer(ren);
     SDL_DestroyWindow(win);
     SDL_Quit();
+
     return 0;
 
 // gcc -std=c99 -g -Wall display_jpg.c ann_file_ops.c -o display_jpg -DREENTRANT -I. -I/usr/include/SDL2 -lSDL2 -lSDL2_image
-    return 0;
+ 
 }
 
 /** \fn int recognise_by_pix_data(int input_examples, char *image_pixels)
@@ -344,10 +437,6 @@ int recognise_by_pix_data(int input_examples, char *image_pixels)
 #if(DEBUG_ON == 1)
        printf("OK.\n");
 #endif
-       for(i = 0; i < input_examples; i++)
-       {
-           printf("Image %d is %d.\n", i, (result[i]));
-       }
        return_value = result[0];
    }
    else
@@ -518,7 +607,7 @@ int recognise_by_file(int input_examples, char *image_list[])
 }
 
 
-/** \fn vvoid sigmoid_matrix(float **matrix, int rows, iment cols, float **result)
+/** \fn void sigmoid_matrix(float **matrix, int rows, iment cols, float **result)
     \brief Calculates the sigmoid function over the given 2D matrix of floats.
 
     \param[in] **matrix pointer to the 2D source matrix.
@@ -571,7 +660,7 @@ void add_bias_column_to_matrix(float **src_matrix, int rows, int cols, float **d
 
 
 /** \fn int *predict(float **mTheta1, float **mTheta2, float **mX)
-    \brief Predict the label of an input given a trained neural network
+    \brief Predicts the label of an input given a trained neural network
 
      PREDICT(Theta1, Theta2, X) outputs the predicted label of X given the
      trained weights of a neural network (Theta1, Theta2)
@@ -684,7 +773,7 @@ int *predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, i
    int *result = (int *)malloc(XRows*sizeof(int));
    if(result == NULL)
    {
-       printf("Caanot allocate result vector.\n");
+       printf("Cannot allocate memory for the result vector.\n");
        return(NULL);
    }
    for(i=0; i < XRows; i++)

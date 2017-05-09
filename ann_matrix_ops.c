@@ -136,7 +136,7 @@ int deallocate_matrix_floats(float **matrix, int rows)
    return(0);
 }
 
-int init_matrix(float **matrix, int rows, int cols)
+int init_matrix(float **matrix, int rows, int cols, float init_value)
 {
    int i, j;
    if(matrix == NULL)
@@ -148,7 +148,7 @@ int init_matrix(float **matrix, int rows, int cols)
    {
       for(j=0; j < cols; j++)
       {
-         matrix[i][j] = 0.0;
+         matrix[i][j] = init_value;
       }
    }
    return(0);
