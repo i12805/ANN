@@ -306,11 +306,12 @@ int ALG_MATMUL2D(int M, int N, int K, float** A, float** B, float** C)
 /* on the ZYNQ/BRCM ARM Cortex A9 (or whatever) use openmp approach */
 int ALG_MATMUL2D(int M, int N, int P, float** A, float** B, float** C)
 {
-   int I=0, J=0, K=0;
-   float temp = 0.0;
+   int I=0, J, K;
+   float temp;
  
- #pragma omp parallel shared(A,B,C) private(I,J,K,temp)
+ #pragma omp parallel shared(A,B,C, M, N, P) private(I,J,K,temp)
  {
+	J = 0; K = 0; temp = 0.0;
 	#pragma omp parallel for schedule(static)
 	//#pragma omp parallel for private(J,K,temp)
 		 

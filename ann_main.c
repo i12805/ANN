@@ -69,8 +69,8 @@ int main (int argc, char *argv[])
    SDL_bool done = SDL_FALSE;
    int width=0, height=0, maxColorValue=0;
    char imageType[3];
-    Uint32 u32SmallTexPxls[tile_height*tile_width];
-   unsigned faces_found = 0;
+   // Uint32 u32SmallTexPxls[tile_height*tile_width];
+   //unsigned faces_found = 0;
 
    /* init SDL lib */
    if(SDL_Init(SDL_INIT_VIDEO) < 0)
@@ -277,7 +277,11 @@ int main (int argc, char *argv[])
 #endif
 
      unsigned int u32Pixels[width*height];
-     for(int i = 0; i < width * height; i++)
+     unsigned int im_size = width*height;
+  #pragma omp parallel default(none) private(i) shared(u32Pixels, pixels, im_size)
+  {
+     #pragma omp for
+     for(int i = 0; i < im_size; i++)
      {
           u32Pixels[i] = (unsigned)(
                          (unsigned)0x00<<24 |
@@ -285,6 +289,7 @@ int main (int argc, char *argv[])
                          (unsigned)pixels[i]<< 8 |
                          (unsigned)pixels[i]);
      }
+   } // end pragma omp parallel for
 
      int depth = 32;
      int pitch = 4*width;
@@ -376,10 +381,16 @@ int recognise_by_pix_data(int input_examples, char *image_pixels)
 #if(DEBUG_ON == 1)
       printf("Normalizing pixel data to [-1, 1] ... ");
 #endif
+
+   #pragma omp parallel default(none) shared(i, image, image_pixels) private(j)
+   {
+      #pragma omp for 
       for(j = 0; j < INPUT_LAYER_SIZE; j++)
       {
 	   image[i][j] = (float)REMAP_PIXEL(image_pixels[j]);
       }
+   } /* end pragma omp parallel */
+
 #if(DEBUG_ON == 1)
       printf("Done.\n");
       print_matrix(image, input_examples, INPUT_LAYER_SIZE);
@@ -399,6 +410,10 @@ int recognise_by_pix_data(int input_examples, char *image_pixels)
 #if(DEBUG_ON == 1)
    printf("Copy Theta1 ... ");
 #endif
+
+ #pragma omp parallel shared(Theta1Copy) private(i, j)
+ {
+   #pragma omp for
    for(i=0; i < HIDDEN_LAYER_SIZE; i++)
    {
        for(j=0; j < INPUT_LAYER_SIZE+1; j++)
@@ -406,12 +421,18 @@ int recognise_by_pix_data(int input_examples, char *image_pixels)
            Theta1Copy[i][j] =  Theta1[i][j];	   
        }
    }
+ } /* end of pragma omp parallel */
+
 #if(DEBUG_ON == 1)
    printf("Done.\n");
 #endif
 #if(DEBUG_ON == 1)
    printf("Copy Theta2 ... ");
 #endif
+
+ #pragma omp parallel shared(Theta2Copy) private(i, j)
+ {
+   #pragma omp for
    for(i=0; i < NUM_LABELS; i++)
    {
        for(j=0; j < HIDDEN_LAYER_SIZE+1; j++)
@@ -419,6 +440,8 @@ int recognise_by_pix_data(int input_examples, char *image_pixels)
            Theta2Copy[i][j] =  Theta2[i][j];	   
        }
    }
+ } /* end of pragma omp parallel */
+
 #if(DEBUG_ON == 1)
    printf("Done.\n");
 #endif
@@ -456,7 +479,7 @@ int recognise_by_pix_data(int input_examples, char *image_pixels)
 #if(DEBUG_ON == 1)
    printf("Done - %s.\n", (dealloc_status?"Error!":"OK."));
 #endif
-
+   dealloc_status |= 1;
    return return_value;
 }
 
@@ -511,10 +534,16 @@ int recognise_by_file(int input_examples, char *image_list[])
 #if(DEBUG_ON == 1)
       printf("Scaling pixel data to [-1, 1] ... ");
 #endif
+
+ #pragma omp parallel shared(i, image, imageData) private(j)
+ {
+   #pragma omp for
       for(j = 0; j < INPUT_LAYER_SIZE; j++)
       {
 	   image[i][j] = (float)REMAP_PIXEL(imageData.paiPixels[j]);
       }
+ } /* end of pragma omp parallel */
+
 #if(DEBUG_ON == 1)
       printf("Done.\n");
       print_matrix(image, input_examples, INPUT_LAYER_SIZE);
@@ -541,6 +570,10 @@ int recognise_by_file(int input_examples, char *image_list[])
 #if(DEBUG_ON == 1)
    printf("Copy Theta1 ... ");
 #endif
+ 
+ #pragma omp parallel shared(Theta1Copy) private(i, j)
+ {
+   #pragma omp for
    for(i=0; i < HIDDEN_LAYER_SIZE; i++)
    {
        for(j=0; j < INPUT_LAYER_SIZE+1; j++)
@@ -548,12 +581,18 @@ int recognise_by_file(int input_examples, char *image_list[])
            Theta1Copy[i][j] =  Theta1[i][j];	   
        }
    }
+ } /* end of pragma omp parallel */
+
 #if(DEBUG_ON == 1)
    printf("Done.\n");
 #endif
 #if(DEBUG_ON == 1)
    printf("Copy Theta2 ... ");
 #endif
+
+ #pragma omp parallel shared(Theta2Copy) private(i, j)
+ {
+   #pragma omp for
    for(i=0; i < NUM_LABELS; i++)
    {
        for(j=0; j < HIDDEN_LAYER_SIZE+1; j++)
@@ -561,6 +600,8 @@ int recognise_by_file(int input_examples, char *image_list[])
            Theta2Copy[i][j] =  Theta2[i][j];	   
        }
    }
+ } /* and of pragma omp parallel */
+
 #if(DEBUG_ON == 1)
    printf("Done.\n");
 #endif
@@ -602,7 +643,7 @@ int recognise_by_file(int input_examples, char *image_list[])
 #if(DEBUG_ON == 1)
    printf("Done - %s.\n", (dealloc_status?"Error!":"OK."));
 #endif
-
+   dealloc_status |= 1;
    return return_value;
 }
 
@@ -690,7 +731,8 @@ int *predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, i
 
    add_bias_column_to_matrix(mX, XRows, XCols, biasedMatrix);
    int transpose_status = transpose_matrix(mTheta1, Theta1Rows, Theta1Cols, tempMatrix);
-  
+   transpose_status |= 1; 
+ 
    if(((XCols+1) == Theta1Cols))
    {
 #if(DEBUG_ON == 1)      
@@ -875,6 +917,7 @@ int sigmoid_gradient_matrix(float **src_matrix, int rows, int cols, float **dest
       }
    }
    dealloc_status = deallocate_matrix_floats(sigmoid_temp, rows);
+   dealloc_status |= 1;
    return(0);
 }
 
@@ -948,7 +991,7 @@ int nnCostFunction(float **Theta1, float **Theta2, int input_layer_size, int hid
     deallocate_matrix_floats(z3, hidden_layer_size);
 
     /* calculate cost */
+    i = 2; j = 2; i += j;
 
-
-    return;
+    return(0);
 }

@@ -24,7 +24,7 @@ pgm_image_t read_pgm_binary(char *fileName)
    if(pFile == NULL)
    {
       printf("Cannot open %s.\n", fileName);
-      return;
+      return(image);
    }
 
    fscanf(pFile, "%s", imgType);
@@ -36,7 +36,7 @@ pgm_image_t read_pgm_binary(char *fileName)
    if(pixels == NULL)
    {
       printf("Cannot allocate memory.\n");
-      return;
+      return(image);
    }
 
    while(!feof(pFile))
@@ -49,7 +49,7 @@ pgm_image_t read_pgm_binary(char *fileName)
    if(ret == 0) // nothing has bee read */
    {
        printf("Nothing has been read from file.\n");
-       return;
+       return(image);
    }
 
    /* populate the struct */
@@ -177,7 +177,6 @@ int toInt(char a[])
 
 int display_image_file(char *path_to_image, int width, int height)
 {
-    int i;
 
     if(SDL_Init(SDL_INIT_VIDEO) < 0)
     {
@@ -256,7 +255,6 @@ int display_image_file(char *path_to_image, int width, int height)
 
 int display_image_mem(void *pixels, int width, int height)
 {
-    int i;
 
     if(SDL_Init(SDL_INIT_VIDEO) < 0)
     {
