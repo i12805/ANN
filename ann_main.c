@@ -661,15 +661,18 @@ int recognise_by_file(int input_examples, char *image_list[])
 void sigmoid_matrix(float **matrix, int rows, int cols, float **result)
 {
    int i, j;
-
-   for(i=0; i < rows; i++)
-   {
-    for(j=0; j < cols; j++)
+	
+#pragma omp parallel shared(matrix, result) private(i, j)
+ {
+    #pragma omp for
+    for(i=0; i < rows; i++)
     {
-     result[i][j] = (1.0 / (1.0 + exp(-matrix[i][j])));
-     
+        for(j=0; j < cols; j++)
+        {
+             result[i][j] = (1.0 / (1.0 + exp(-matrix[i][j])));    
+        }
     }
-   }
+ } // end of parallel region
 }
 
 
@@ -787,8 +790,7 @@ int *predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, i
             printf("\nERR from matrix multiplication h2.\n");
             return(NULL);
        }
-
-// TODO get sigmoid matrix into the parallel execution     
+	   
        sigmoid_matrix(h2Matrix, XRows, Theta2Rows, h2Matrix);
 
 #if(DEBUG_ON == 1)
