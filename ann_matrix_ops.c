@@ -9,53 +9,110 @@
 #endif
 /* Matrix manipulation functions */
 
-/** \fn void allocate_matrix_char(char ***subs, int rows, int cols)
-    \brief Allocate memry for a rows x cols matrix of chars
+/* Matrix aux. functions for char */
 
-    \param[in] ***subs pointer to the destination matrix's address.
+/** \fn char **allocate_matrix_chars(int rows, int cols, char epsilon_init)
+    \brief Allocate memory rows x cols of chars and initialises the matrix
+
+    If parameter epsilon_init is not zero, the init valie of the matix member would be rand()*2*epsilon - epsilon.
+
     \param[in] rows number of rows of the matrix.
     \param[in] cols number of columns of the matrix.
-    \return void
+    \param[in] epsilon_init init factor.
+    \return a pointer to the new matrix. In failure, returns NULL pointer.
 */
+char **allocate_matrix_chars(int rows, int cols, char epsilon_init)
+{
+   int i, j, kur;
+   char **matrix, a;
+   
+   matrix = (char **)malloc(rows*sizeof(char*));
+   if(matrix == NULL)
+   {
+      printf("ERROR allocating memory for rows of a matrix %dx%d.\n", rows, cols);
+      return(NULL);
+   }
+   for(i=0; i < rows; i++)
+   {
+       matrix[i] = (char*)malloc(cols*sizeof(char));
+       if(matrix[i] == NULL)
+       { 
+            printf("ERROR allocating memory for cols of a matrix %dx%d.\n", rows, cols);
+            kur = deallocate_matrix_chars(matrix, rows);
+            printf("Deallocation status is %d.\n", kur);   
+            return(NULL);
+       }
 
-/* TODO check errors -  if malloc returms NULL, then return the status */
+       /* initializes the matrix with random values or zeros */
+       for (j = 0; j < cols; j++)
+       {
+           a = rand();
+           matrix[i][j] = (a*2*epsilon_init - epsilon_init);
+       }
+   }
+   return(matrix);
+}
 
-void allocate_matrix_char(char ***subs, int rows, int cols)
+/** \fn intr **deallocate_matrix_chars(char **matrix, int rows)
+    \brief Deallocate memory used for matrix of chars
+
+    \param[in] **matrix a pointer to the 2D matrix to be wiped out.
+    \param[in] rows number of rows of the matrix.
+    \return zero on success, -1 otherwise.
+*/
+int deallocate_matrix_chars(char **matrix, int rows)
 {
    int i;
-   char *storage;
 
-   storage = (char *)malloc(rows*cols*sizeof(char));
-   *subs = (char **)malloc(rows*sizeof(char *));
-
-   for(i = 0; i < rows; i++)
+   if(matrix == NULL)
    {
-     (*subs)[i] = &storage[i*cols];
+       return(-1);
    }
-   return;
+
+   for(i=0; i < rows; i++)
+   {
+       free(matrix[i]);
+       matrix[i] = NULL;
+   }
+   free(matrix);
+   matrix = NULL;
+   return(0);
 }
 
-void read_matrix_char(char *fileName, char ***subs, int *rows, int *cols)
+
+/** \fn int transpose_matrix(char **src_matrix, int rows, int cols, char **dest_matrix)
+    \brief Transpose a 2D matrix.
+
+    \param[in] **src_matrix  pointer to the 2D source matrix.
+    \param[in] rows number of rows of the matrix.
+    \param[in] cols number of columns of the matrix.
+    \param[out] **dest_matrix  pointer to the 2D destination(i.e. transposed) matrix.
+    \return zero in success, -1 if any of src or dest pointers are null.
+*/
+
+int transpose_matrix_chars(char **src_matrix, int rows, int cols, char **dest_matrix)
 {
-   char errorMsg[80];
-   FILE *pFile;
-
-   pFile = fopen(fileName, "r");
-   if(pFile == NULL)
-   {
-      sprintf(errorMsg, "Can't open file: '%s'", fileName);
-      printf("%s\n", errorMsg);
-   }
-   //fread(rows, sizeof(int), 1, pFile);
-   //fread(cols, sizeof(int), 1, pFile);
    
-   *rows = 64;
-   *cols = 60;
+   int i, j;
+   if((src_matrix == NULL) || (dest_matrix == NULL))
+   {
+       return(-1);
+   }
 
-   allocate_matrix_char(subs, *rows, *cols);
-   fread((*subs)[0], sizeof(char), ((*rows) * (*cols)), pFile);
-   fclose(pFile);
+#pragma omp parallel private(i, j) shared(dest_matrix, src_matrix, rows, cols)
+ {
+   #pragma omp for schedule(static)
+   for(i=0; i < rows; i++)
+   {
+    for(j=0; j < cols; j++)
+    {
+     dest_matrix[j][i] = src_matrix[i][j];
+    }
+   }
+ } // end of parallel region
+   return(0);
 }
+
 
 void print_matrix_char(char **matrix, int rows, int cols)
 {
@@ -73,7 +130,8 @@ void print_matrix_char(char **matrix, int rows, int cols)
 }
 
 
-/* Matrix aux functions for floats */
+
+/* **************** Matrix aux functions for floats **************** */
 
 /** \fn float **allocate_matrix_floats(int rows, int cols, float epsilon_init)
     \brief Allocate memory rows x cols of floats and initialises the matrix
@@ -189,6 +247,9 @@ int transpose_matrix(float **src_matrix, int rows, int cols, float **dest_matrix
        return(-1);
    }
 
+#pragma omp parallel private(i, j) shared(dest_matrix, src_matrix, rows, cols)
+ {
+   #pragma omp for schedule(static)
    for(i=0; i < rows; i++)
    {
     for(j=0; j < cols; j++)
@@ -196,6 +257,7 @@ int transpose_matrix(float **src_matrix, int rows, int cols, float **dest_matrix
      dest_matrix[j][i] = src_matrix[i][j];
     }
    }
+ } // end of parallel region
    return(0);
 }
 

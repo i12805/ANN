@@ -84,7 +84,7 @@ pgm_image_t read_pgm_binary(char *fileName)
 int read_image_file(char *fileName, pgm_image_t *image)
 {
    FILE *pFile;
-   int i=0, j=0, ret=999, rows, cols, maxColorValue;
+   int i=0, j=0, ret=0, rows, cols, maxColorValue;
    char var, str[4];
    char imgType[3];
    

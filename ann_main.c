@@ -3,9 +3,7 @@
 #include <string.h>
 #include <math.h>
 #include <SDL2/SDL.h>
-#ifndef TEST
 #include "ann_config.h"
-#endif
 #include "ann_matrix_ops.h"
 #include "ann_file_ops.h"
 
@@ -28,8 +26,7 @@
 
 /* Configure ANN topology */
 #define INPUT_LAYER_SIZE (IMG_WIDTH * IMG_HEIGHT)
-#define HIDDEN_LAYER_1_SIZE 25
-#define HIDDEN_LAYER_2_SIZE 25
+#define HIDDEN_LAYER_SIZE 25
 #define NUM_LABELS 2
 #define INPUT_EXAMPLES 42
 
@@ -37,15 +34,10 @@
 #define DEBUG_ON 0 
 #define CHECK_LABELS 0
 
-#ifdef TEST
-const float Theta1[1][1];
-const float Theta2[1][1];
-#endif
-#define HIDDEN_LAYER_SIZE 25
+//#define TEST
 
-
-int tile_width  = 64;
-int tile_height = 60;
+int tile_width  = IMG_WIDTH;
+int tile_height = IMG_HEIGHT;
 
 void sigmoid_matrix(float**, int, int, float**);
 void add_bias_column_to_matrix(float **src_matrix, int rows, int cols, float **dest_matrix);
@@ -61,11 +53,11 @@ int main (int argc, char *argv[])
        printf("Give me at least one input file.\n");
        exit(-1);
     }
-
+#ifndef TEST
    char *fileName = argv[1];
    FILE *pFile;
    char var;
-   unsigned i=0, ret=0;
+   unsigned i=0, j=0, ret=0;
    SDL_bool done = SDL_FALSE;
    int width=0, height=0, maxColorValue=0;
    char imageType[3];
@@ -278,9 +270,9 @@ int main (int argc, char *argv[])
 
      unsigned int u32Pixels[width*height];
      unsigned int im_size = width*height;
-  #pragma omp parallel default(none) private(i) shared(u32Pixels, pixels, im_size)
+  #pragma omp parallel private(i) shared(u32Pixels, pixels, im_size)
   {
-     #pragma omp for
+     #pragma omp for schedule(static)
      for(int i = 0; i < im_size; i++)
      {
           u32Pixels[i] = (unsigned)(
@@ -309,15 +301,62 @@ int main (int argc, char *argv[])
      //SDL_BlitSurface(tile_surface, NULL, screen, &target_rect);
 
      SDL_UpdateTexture(tex, NULL, (void*)u32Pixels, pitch);
+ 
+    /* cast image pixels to char to match network format */ 
+    char **img = allocate_matrix_chars(tile_height, tile_width, 0.0);  // 64x60
+    char **imgT = allocate_matrix_chars(tile_width, tile_height, 0.0); // 60x64
+
+    #pragma omp parallel private(i, j) shared(img, tile_surface)
+    {
+       #pragma omp for schedule(static)
+       for(i = 0; i < tile_height; i++)
+       {
+          for(j = 0; j < tile_width; j++)
+          {
+             img[i][j] = (char)((Uint32*)tile_surface->pixels[i*tile_width + j] & 0xFF);
+          }
+       }
+     } // end pragma omp parallel for
+
+#if 0
+     transpose_matrix_chars(img, height, width, imgT);
+    
+     /* put transposed pixels back to the surface for visualization purposes */
+    #pragma omp parallel private(i, j) shared(imgT, tile_surface)
+    {
+       #pragma omp for schedule(static)
+       for(i = 0; i < tile_width; i++)
+       {
+          for(j = 0; j < tile_height; j++)
+          {
+          tile_surface->pixels[i*tile_height + j] = (void)(
+                         (unsigned)0x00<<24 |
+                         (unsigned)imgT[i][j]<<16 |
+                         (unsigned)imgT[i][j]<< 8 |
+                         (unsigned)imgT[i][j]);
+          }
+       }
+     } // end pragma omp parallel for
+
+    (void)dealloc_matrix_chars(img, tile_height);
+    (void)dealloc_matrix_chars(imgT, tile_width);
+
+#endif
+
+     /* update small window texture with the tansposed image */
      SDL_UpdateTexture(tex_small, &target_rect, tile_surface->pixels, (4*tile_width));
-     
+
+     /* clear the mf render */
      SDL_RenderClear(ren);
+
      /* Draw the texture */
      SDL_RenderCopy(ren, tex, NULL, NULL);
      SDL_RenderCopy(ren, tex_small, NULL, &target_rect);
-      
+     
+     /* pass though network for detection */
+     unsigned res = recognise_by_pix_data(1, *img);
 
-     unsigned res = recognise_by_pix_data(1, tile_surface->pixels);
+     /* asses result from netwotk assessment */
      if(res == 1)
      {
      	/* draw bounding boxes, where a face has been found */
@@ -347,7 +386,73 @@ int main (int argc, char *argv[])
     SDL_DestroyRenderer(ren);
     SDL_DestroyWindow(win);
     SDL_Quit();
+#else
+    argv++;
+//    int result = recognise_by_file(--argc, argv);
+//    printf("Result: %d.\n", result);
+  int i, j;
+  int width = 60;
+  int height = 64;
+  
+  unsigned int im_size = width*height;
+  unsigned int u32Pixels[im_size], u32Pixels2[im_size];
+  unsigned char pixel = 0;
+  unsigned char image_number = 0;
+  float **img = allocate_matrix_floats(height, width, 0.0);
+  float **imgT = allocate_matrix_floats(width, height, 0.0);
+  #pragma omp parallel private(i, j, pixel) shared(u32Pixels, img)
+  {
+     #pragma omp for schedule(static)
+     for(i = 0; i < im_size; i++)
+     {
+	pixel = (unsigned char)((testFace[image_number][i] + 1)*255)/2;
 
+          u32Pixels[i] = (unsigned)(
+                         (unsigned)0x00<<24 |
+                         (unsigned)pixel<<16 |
+                         (unsigned)pixel<< 8 |
+                         (unsigned)pixel);
+     }
+
+     #pragma omp for schedule(static)
+     for(i = 0; i < height; i++)
+     {
+        for(j = 0; j < width; j++)
+        {
+           img[i][j] = testFace[image_number][i*width + j];
+        }
+     }
+   } // end pragma omp parallel for
+
+   transpose_matrix(img, height, width, imgT);
+
+   #pragma omp parallel 
+   {
+     #pragma omp for schedule(static)
+     for(i = 0; i < width; i++)
+     {
+       for(j = 0; j < height; j++)
+       {
+	pixel = (unsigned char)((imgT[i][j] + 1)*255)/2;
+
+          u32Pixels2[i*height + j] = (unsigned)(
+                         (unsigned)0x00<<24 |
+                         (unsigned)pixel<<16 |
+                         (unsigned)pixel<< 8 |
+                         (unsigned)pixel);
+       }
+     }
+    }
+
+   display_image_mem((void*)(u32Pixels), height, width);
+   display_image_mem((void*)(u32Pixels), width, height);
+
+   display_image_mem((void *)(u32Pixels2), height, width);
+
+  (void)deallocate_matrix_floats(img, height);
+  (void)deallocate_matrix_floats(imgT, width);
+
+#endif
     return 0;
 
 // gcc -std=c99 -g -Wall display_jpg.c ann_file_ops.c -o display_jpg -DREENTRANT -I. -I/usr/include/SDL2 -lSDL2 -lSDL2_image
@@ -514,7 +619,8 @@ int recognise_by_file(int input_examples, char *image_list[])
 #if(DEBUG_ON == 1)
       printf("Read file %s - %d of %d... ", fileName, i+1, input_examples);
 #endif
-      read_image_file(fileName, &imageData);
+      //read_image_file(fileName, &imageData);
+	imageData = read_pgm_binary(fileName);
 #if(DEBUG_ON == 1)
       printf("Done.\n");
 #endif
@@ -661,18 +767,18 @@ int recognise_by_file(int input_examples, char *image_list[])
 void sigmoid_matrix(float **matrix, int rows, int cols, float **result)
 {
    int i, j;
-	
-#pragma omp parallel shared(matrix, result) private(i, j)
+ #pragma omp parallel shared(result, matrix, rows, cols) private(i, j)
  {
-    #pragma omp for
-    for(i=0; i < rows; i++)
+   #pragma omp for
+   for(i=0; i < rows; i++)
+   {
+    for(j=0; j < cols; j++)
     {
-        for(j=0; j < cols; j++)
-        {
-             result[i][j] = (1.0 / (1.0 + exp(-matrix[i][j])));    
-        }
+     result[i][j] = (1.0 / (1.0 + exp(-matrix[i][j])));
+     
     }
- } // end of parallel region
+   }
+ } /* edn of rpagma omp parallel */
 }
 
 
@@ -692,6 +798,9 @@ void add_bias_column_to_matrix(float **src_matrix, int rows, int cols, float **d
 {
    int i, j;
 
+ #pragma omp parallel shared(src_matrix, dest_matrix) private(i, j)
+ {
+   #pragma omp for
    for(i=0; i < rows; i++)
    {
     dest_matrix[i][0] = 1.0;
@@ -700,6 +809,7 @@ void add_bias_column_to_matrix(float **src_matrix, int rows, int cols, float **d
         dest_matrix[i][j+1] = src_matrix[i][j];
      }
    }
+ } // end of parallel region
 }
 
 
@@ -790,7 +900,8 @@ int *predict(float **mTheta1, int Theta1Rows, int Theta1Cols, float **mTheta2, i
             printf("\nERR from matrix multiplication h2.\n");
             return(NULL);
        }
-	   
+
+// TODO get sigmoid matrix into the parallel execution on parallella(!)    
        sigmoid_matrix(h2Matrix, XRows, Theta2Rows, h2Matrix);
 
 #if(DEBUG_ON == 1)
@@ -919,7 +1030,8 @@ int sigmoid_gradient_matrix(float **src_matrix, int rows, int cols, float **dest
       }
    }
    dealloc_status = deallocate_matrix_floats(sigmoid_temp, rows);
-   dealloc_status |= 1;
+   dealloc_status |= 0;
+
    return(0);
 }
 
