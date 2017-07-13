@@ -190,7 +190,7 @@ int display_image_file(char *path_to_image, int width, int height)
         return(-1);
     }
 
-    SDL_Window *win = SDL_CreateWindow("Hello World!", 100, 100, width, height, SDL_WINDOW_SHOWN);
+    SDL_Window *win = SDL_CreateWindow("Visual Buffer", 100, 100, width, height, SDL_WINDOW_SHOWN);
     if (win == NULL)
     {
 	printf("SDL_CreateWindow Error: %s.\n", SDL_GetError());

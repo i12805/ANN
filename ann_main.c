@@ -55,14 +55,13 @@ int main (int argc, char *argv[])
     }
 #ifndef TEST
    char *fileName = argv[1];
+   char *fileName2 = argv[2];
    FILE *pFile;
    char var;
    unsigned i=0, j=0, ret=0;
    SDL_bool done = SDL_FALSE;
    int width=0, height=0, maxColorValue=0;
    char imageType[3];
-   // Uint32 u32SmallTexPxls[tile_height*tile_width];
-   //unsigned faces_found = 0;
 
    /* init SDL lib */
    if(SDL_Init(SDL_INIT_VIDEO) < 0)
@@ -146,6 +145,7 @@ int main (int argc, char *argv[])
      
      /* Allocate memory for captured image pixels */
      char *pixels = (char *)malloc(DISPLAY_WIN_WIDTH*DISPLAY_WIN_HEIGHT*sizeof(char)); 
+     char *pixels2 = (char *)malloc(tile_width*tile_height*sizeof(char)); 
      if(pixels == NULL)
      {
         printf("Cannot allocate memory.\n");
@@ -184,8 +184,14 @@ int main (int argc, char *argv[])
 	   }
  	}
 
-        system("streamer -c /dev/video0 -f pgm -q -o images/test.pgm");
-        SDL_Delay(25);
+     #if 0
+     system("streamer -c /dev/video0 -f pgm -q -o images/test.pgm");
+     #else
+     system("fswebcam -d /dev/video0 -r 320x240 -q --jpeg 85 --greyscale --scale 64x60 -F 5 --no-banner images/test.jpg");
+     // system("python im_convert.py"); - too slow, better use graphicsMagick!
+     system("gm convert images/test.jpg -normalize images/test.pgm");
+     #endif
+     SDL_Delay(25);
 
      /* Read captured .pgm image file, get type, weight, height, max color and pixel data */
      pFile = fopen(fileName, "rb");
@@ -302,49 +308,77 @@ int main (int argc, char *argv[])
 
      SDL_UpdateTexture(tex, NULL, (void*)u32Pixels, pitch);
  
+     /* Read coverted .pgm image file, get type, weight, height, max color and pixel data */
+     pFile = fopen(fileName2, "rb");
+     if(pFile == NULL)
+     {
+        printf("Cannot open %s.\n", fileName2);
+        SDL_DestroyRenderer(ren);
+        SDL_DestroyWindow(win);
+        SDL_Quit();
+        return(-1);
+     }
+
+     fscanf(pFile, "%s", imageType);
+     fscanf(pFile, "%d", &width);
+     fscanf(pFile, "%d", &height);
+     fscanf(pFile, "%d", &maxColorValue);
+
+     i = 0;
+     while(!feof(pFile))
+     {
+        ret += fscanf(pFile, "%c", &var); // get pixels as char
+        pixels2[i++] = var;
+     }
+     fclose(pFile);
+   
+
+     if(ret == 0) // nothing has been red */
+     {
+         printf("Nothing has been red from the converted (scaled) file.\n");
+         SDL_DestroyRenderer(ren);
+         SDL_DestroyWindow(win);
+         SDL_Quit();
+         return(-1);
+     }
     /* cast image pixels to char to match network format */ 
     char **img = allocate_matrix_chars(tile_height, tile_width, 0.0);  // 64x60
     char **imgT = allocate_matrix_chars(tile_width, tile_height, 0.0); // 60x64
 
-    #pragma omp parallel private(i, j) shared(img, tile_surface)
+    Uint32 *U32Pixels = (Uint32 *)tile_surface->pixels;
+    char pixels2T[tile_width*tile_height];
+
+    #pragma omp parallel private(i, j) shared(img, pixels2, pixels2T)
     {
        #pragma omp for schedule(static)
        for(i = 0; i < tile_height; i++)
        {
           for(j = 0; j < tile_width; j++)
           {
-             img[i][j] = (char)((Uint32*)tile_surface->pixels[i*tile_width + j] & 0xFF);
+             img[i][j] = pixels2[i*tile_width + j];
+             pixels2T[j*tile_width+i] = pixels2[i*tile_width + j];
           }
        }
      } // end pragma omp parallel for
 
-#if 0
-     transpose_matrix_chars(img, height, width, imgT);
-    
-     /* put transposed pixels back to the surface for visualization purposes */
-    #pragma omp parallel private(i, j) shared(imgT, tile_surface)
+     transpose_matrix_chars(img, tile_height, tile_width, imgT);
+
+    #pragma omp parallel private(i, j) shared(U32Pixels, pixels2, pixels2T)
     {
        #pragma omp for schedule(static)
-       for(i = 0; i < tile_width; i++)
-       {
-          for(j = 0; j < tile_height; j++)
-          {
-          tile_surface->pixels[i*tile_height + j] = (void)(
+       for(i = 0; i < tile_width*tile_height; i++)
+       {      
+             U32Pixels[i] = (Uint32)(
                          (unsigned)0x00<<24 |
-                         (unsigned)imgT[i][j]<<16 |
-                         (unsigned)imgT[i][j]<< 8 |
-                         (unsigned)imgT[i][j]);
-          }
+                         (unsigned)pixels2T[i]<<16 |
+                         (unsigned)pixels2T[i]<< 8 |
+                         (unsigned)pixels2T[i]);
        }
      } // end pragma omp parallel for
-
-    (void)dealloc_matrix_chars(img, tile_height);
-    (void)dealloc_matrix_chars(imgT, tile_width);
-
-#endif
-
+    
      /* update small window texture with the tansposed image */
-     SDL_UpdateTexture(tex_small, &target_rect, tile_surface->pixels, (4*tile_width));
+     //SDL_UpdateTexture(tex_small, &target_rect, tile_surface->pixels, (4*tile_width));
+     SDL_UpdateTexture(tex_small, &target_rect, (void*)U32Pixels, (4*tile_height));;
 
      /* clear the mf render */
      SDL_RenderClear(ren);
@@ -354,7 +388,8 @@ int main (int argc, char *argv[])
      SDL_RenderCopy(ren, tex_small, NULL, &target_rect);
      
      /* pass though network for detection */
-     unsigned res = recognise_by_pix_data(1, *img);
+    unsigned res = recognise_by_pix_data(1, pixels2T);
+   // unsigned res = recognise_by_pix_data(1, *img);
 
      /* asses result from netwotk assessment */
      if(res == 1)
@@ -374,12 +409,16 @@ int main (int argc, char *argv[])
      /* Update the screen */
      SDL_RenderPresent(ren);
 
+     (void)deallocate_matrix_chars(img, tile_height);
+     (void)deallocate_matrix_chars(imgT, tile_width);
    
    } /* End of while(!done) */
 
    
     free(current_tile);
     free(pixels);
+    free(pixels2);
+
     
     SDL_FreeSurface(tile_surface);
     SDL_DestroyTexture(tex);
@@ -452,6 +491,7 @@ int main (int argc, char *argv[])
   (void)deallocate_matrix_floats(img, height);
   (void)deallocate_matrix_floats(imgT, width);
 
+  display_image_file("images/test.jpg", DISPLAY_WIN_WIDTH, DISPLAY_WIN_HEIGHT);
 #endif
     return 0;
 
@@ -661,7 +701,7 @@ int recognise_by_file(int input_examples, char *image_list[])
 #if(DEBUG_ON == 1)
       printf("Done.\n");
 #endif
-   }
+  } // end of input_examples for loop
 
    float **Theta1Copy, **Theta2Copy;
 
