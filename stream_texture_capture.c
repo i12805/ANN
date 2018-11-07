@@ -1,21 +1,21 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <SDL2/SDL.h>
-//#include <SDL2/SDL_image.h>
-#include "ann_file_ops.h"
-
 #include <string.h>
 #include <fcntl.h>
 #include <errno.h>
-#include <sys/ioctl.h>
-#include <sys/types.h>
-#include <sys/time.h>
-#include <sys/mman.h>
-#include <linux/videodev2.h>
+//#include <linux/ioctl.h>
+#include <linux/types.h>
+#include <arm-linux-gnueabihf/sys/ioctl.h>
+#include <arm-linux-gnueabihf/sys/mman.h>
 #include <libv4l2.h>
+#include <linux/videodev2.h>
+#include <SDL2/SDL.h>
+#include <arm-linux-gnueabihf/sys/select.h>
+#include <omp.h>
+#include <math.h>
+#include "ann_file_ops.h"
 
-
-typedef struct buffer {
+typedef struct _sV4L2Buffer_t {
         void   *start;
         size_t length;
 }sV4L2Buffer_t;
@@ -24,6 +24,12 @@ typedef struct buffer {
 #define HEIGHT 480
 
 #define CLEAR(x) memset(&(x), 0, sizeof(x))
+#define min(X, Y) (((X) < (Y)) ? (X) : (Y))
+#define max(X, Y) (((X) > (Y)) ? (X) : (Y))
+
+#undef USE_YUV2_PLANAR
+#define CONVERT_YUV_TO_RGB_USE_CHROMA
+//#define SD
 
 struct v4l2_format              fmt;
 struct v4l2_buffer              buf;
@@ -37,16 +43,16 @@ char                            *dev_name = "/dev/video0";
 char                            out_name[256];
 FILE                            *fout;
 sV4L2Buffer_t                   *buffers;
-sV4L2Buffer_t                   *buffers_copy;
 static volatile unsigned int    u32BytesUsed = 0;
 
-Uint32 u32Pixels[WIDTH*HEIGHT];
+Uint32 au32Pixels[WIDTH*HEIGHT*2];
 SDL_bool done = SDL_FALSE;
 SDL_Window *win = NULL;
 SDL_Renderer *ren = NULL;
 SDL_Texture *tex = NULL;
+SDL_Rect bounding_box;
 
-#if defined(USE_YUV2)
+#if defined(USE_YUV2_PLANAR)
 SDL_PixelFormat spf;
 SDL_PixelFormat *psYUV2PixelFormat = &spf;
 
@@ -109,7 +115,6 @@ void vCaptureInit()
         xioctl(fd, VIDIOC_REQBUFS, &req);
 
         buffers = calloc(req.count, sizeof(*buffers));
-        buffers_copy = calloc(req.count, sizeof(*buffers));
         for (n_buffers = 0; n_buffers < req.count; ++n_buffers) {
                 CLEAR(buf);
 
@@ -168,7 +173,7 @@ int s32Capture(unsigned int u32Frames)
                 buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
                 buf.memory = V4L2_MEMORY_MMAP;
                 xioctl(fd, VIDIOC_DQBUF, &buf);
-
+                /* 
                 sprintf(out_name, "images/out%03d.ppm", i);
                 fout = fopen(out_name, "w");
                 if (!fout) {
@@ -177,10 +182,10 @@ int s32Capture(unsigned int u32Frames)
                 }
                 fprintf(fout, "P6\n%d %d 255\n", fmt.fmt.pix.width, fmt.fmt.pix.height);
                 fwrite(buffers[buf.index].start, buf.bytesused, 1, fout);
-                u32BytesUsed = (unsigned int)buf.bytesused;
-                printf("buf inside capture fn: %d\n", u32BytesUsed);
-                memcpy(buffers_copy, buffers[0].start, u32BytesUsed);
                 fclose(fout);
+                */
+                u32BytesUsed = (unsigned int)buf.bytesused;
+           //     printf("buf inside capture fn: %d\n", u32BytesUsed);
                 
                 xioctl(fd, VIDIOC_QBUF, &buf);
         }
@@ -219,7 +224,9 @@ int iSDL_Init(void)
         return(-1);
    }
 
-    ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC | SDL_RENDERER_TARGETTEXTURE);
+    ren = SDL_CreateRenderer(win, -1, SDL_RENDERER_ACCELERATED | 
+                                      SDL_RENDERER_PRESENTVSYNC | 
+                                      SDL_RENDERER_TARGETTEXTURE);
     if (ren == NULL)
     {
         SDL_DestroyWindow(win);
@@ -228,10 +235,10 @@ int iSDL_Init(void)
         return(-1);
      }
      
-#if defined(USE_YUV2)
+#if defined(USE_YUV2_PLANAR)
      tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_YUY2, SDL_TEXTUREACCESS_STREAMING, WIDTH, HEIGHT);
 #else
-     tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, WIDTH, HEIGHT);
+     tex = SDL_CreateTexture(ren, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, WIDTH, HEIGHT);
 #endif
 
      if (tex == NULL)
@@ -242,7 +249,7 @@ int iSDL_Init(void)
         SDL_Quit();
         return(-1);
      }
-#if defined(USE_YUV2)
+#if defined(USE_YUV2_PLANAR)
     psYUV2PixelFormat->format=SDL_PIXELFORMAT_YUY2;
     psYUV2PixelFormat->palette=NULL;
     psYUV2PixelFormat->BitsPerPixel=16;
@@ -254,8 +261,8 @@ int iSDL_Init(void)
 #endif
        
 #if defined(USE_BOUNDING_BOX)
-     //SDL_Rect bounding_box = { .x=10, .y=10, .w=64, .h=60 };
-     //SDL_SetRenderDrawColor(ren, 250, 250, 0, SDL_ALPHA_OPAQUE); // opaque = 255
+     bounding_box = { .x=10, .y=10, .w=64, .h=60 };
+     SDL_SetRenderDrawColor(ren, 250, 250, 0, SDL_ALPHA_OPAQUE); // opaque = 255
 #endif
      return(0);
  }
@@ -270,16 +277,23 @@ void vSDL_Close(void)
 
 int main(int argc, char *argv[])
 {
+#if defined(SAVE_RGB_FILE)
+     Uint8 au8RGBPixels[WIDTH*HEIGHT*3] = {0};
+#endif     
     //char *fileName = argv[1];
-    printf("Enter main.\n");
+    //printf("Enter main.\n");
+    //printf("vCaptureInit ... ");
     vCaptureInit();
+    //printf("Done.\n");
+    //printf("iSDL_Init ... ");
     int res = iSDL_Init();
     if(res !=0)
     {
         printf("Error in SDL init. Quit.\n");
         return(1);
     }
-
+    //printf("Done.\n");
+    //printf("Enter while(done) ... \n");
     while(!done)
     {
         SDL_Event event;
@@ -296,10 +310,14 @@ int main(int argc, char *argv[])
                 case SDL_QUIT:
                     done = SDL_TRUE;
                 break;
+                default:
+                    //printf("Default break.\n");
+                break;
             }
         }
 
         /* Capture camera frame */
+        //printf("Capturing camera frame ...");
         int capres = s32Capture(1);
         if( (capres != 0) )
         {
@@ -311,48 +329,105 @@ int main(int argc, char *argv[])
             SDL_Quit();
             return(-1);
         }
+        //printf("Done.\n");
 
-        printf("Bytes used in capture buffer: %d.\n", u32BytesUsed);
-        SDL_Delay(50);
+        //printf("Bytes used in capture buffer: %d.\n", u32BytesUsed);
+        //SDL_Delay(50);
 
         /* Get pixel data */
-         Uint32 *video_buffer_data = (Uint32 *)(buffers_copy->start);
-        printf("raw buffer: 0x%08X\n", *video_buffer_data);
+        //printf("Get pixel data from buffer-copy.\n");
+        Uint32 *video_buffer_data = (Uint32 *)(buffers->start);
+        //printf("raw buffer: 0x%08X\n", *video_buffer_data);
         int i;
+
+        Uint8 Cr = 0;
+        Uint8 Y2 = 0;
+        Uint8 Cb = 0;
+        Uint8 Y1 = 0;
+
+        Uint8 R = 0;
+        Uint8 G = 0;
+        Uint8 B = 0;
+
+        #if defined(SAVE_RGB_FILE)
+            unsigned u32i = 0;
+        #endif
+
+#pragma omp parallel shared(au32Pixels, video_buffer_data) \
+                     private(i, Y1, Y2, Cb, Cr, R, G, B) \
+                     firstprivate(u32BytesUsed) \
+                     num_threads(4)
+    {
+#pragma omp for schedule(static, 153600)
+
         for(i=0; i < u32BytesUsed/2; i+=2)
         {
         
-        #if defined(USE_YUV2)
+        #if defined(USE_YUV2_PLANAR)
             SDL_GetRGB( (Uint32)(*video_buffer_data), psYUV2PixelFormat, pu8R, pu8G, pu8B);
-            u32Pixels[i] = (unsigned)0x00<<24 |
+            au32Pixels[i] = (unsigned)0x00<<24 |
                            (unsigned)(*pu8R)<<16 |
                            (unsigned)(*pu8G)<< 8 |
                            (unsigned)(*pu8B);
-            //SDL_UpdateYUVTexture(tex, NULL, u8YPlane, WIDTH, u8UPlane, 4*WIDTH, u8VPlane, 4*WIDTH);
+            SDL_UpdateYUVTexture(tex, NULL, u8YPlane, WIDTH, u8UPlane, 4*WIDTH, u8VPlane, 4*WIDTH);
         #else
-            Uint8 Y1 = (*(video_buffer_data)) >> 24;
-            Uint8 Cb = ((*video_buffer_data) & 0x00FF0000U) >> 16;
-            Uint8 Y2 = ((*video_buffer_data) & 0x0000FF00U) >> 8;
-            Uint8 Cr = ((*video_buffer_data) & 0x000000FFU);
+            Cr = (*(video_buffer_data)) >> 24;
+            Y2 = ((*video_buffer_data) & 0x00FF0000U) >> 16;
+            Cb = ((*video_buffer_data) & 0x0000FF00U) >> 8;
+            Y1 = ((*video_buffer_data) & 0x000000FFU);
+           
+        #if defined(CONVERT_YUV_TO_RGB_USE_CHROMA)
+
+
+          R = (Uint8)((unsigned)(Y1 + 1.402*(Cr-128)) & 0xFFU);
+          G = (Uint8)((unsigned)(Y1 - 0.344*(Cb-128) - 0.714*(Cr-128)) & 0xFFU);
+          B = (Uint8)((unsigned)(Y1 + 1.772*(Cb-128)) & 0xFFU);
+
+          au32Pixels[i] = (unsigned)0x00<<24 | (unsigned)R << 16 | (unsigned)G << 8  | (unsigned)B;
+          
+        #if defined(SAVE_RGB_FILE)
+          au8RGBPixels[u32i++] = R;
+          au8RGBPixels[u32i++] = G;
+          au8RGBPixels[u32i++] = B;
+        #endif
+
+          R = (Uint8)((unsigned)(Y2 + 1.402*(Cr-128)) & 0xFFU);
+          G = (Uint8)((unsigned)(Y2 - 0.344*(Cb-128) - 0.714*(Cr-128)) & 0xFFU);
+          B = (Uint8)((unsigned)(Y2 + 1.772*(Cb-128)) & 0xFFU);
+
+          au32Pixels[i+1] = (unsigned)0x00<<24 | (unsigned)R << 16 | (unsigned)G << 8  | (unsigned)B;
+
+        #if defined(SAVE_RGB_FILE)
+          au8RGBPixels[u32i++] = R;
+          au8RGBPixels[u32i++] = G;
+          au8RGBPixels[u32i++] = B;
+        #endif
+
+        #else /* convert YUV to grey scale */
             
-            u32Pixels[i] = (unsigned)0x00<<24 |
-                           (unsigned)(Y1+1.402*Cr)<<16 |
-                           (unsigned)(Y1-0.344*Cb-0.714*Cb)<< 8 |
-                           (unsigned)(Y1+1.772*Cb);
+           au32Pixels[i] = (unsigned)0x00<<24 |
+                           (unsigned)(Y1)<<16 |
+                           (unsigned)(Y1)<< 8 |
+                           (unsigned)(Y1);
             
-            u32Pixels[i+1] = (unsigned)0x00<<24 |
-                           (unsigned)(Y2+1.402*Cr)<<16 |
-                           (unsigned)(Y2-0.344*Cb-0.714*Cb)<< 8 |
-                           (unsigned)(Y2+1.772*Cb);
-         #endif    
-           video_buffer_data++;
-        }
+           au32Pixels[i+1] = (unsigned)0x00<<24 |
+                           (unsigned)(Y2)<<16 |
+                           (unsigned)(Y2)<< 8 |
+                           (unsigned)(Y2);
+     
+        #endif /* defined(CONVERT_YUV_TO_RGB) */
+        #endif /* defined(USE_YUV2_PLANAR) */
+        #pragma omp atomic
+            video_buffer_data++;
+        } /* end of for loop */
+    } /* end of pragma omp parallel */     
    
     #if defined(USE_BOUNDING_BOX)
         bounding_box.y = 0;
         bounding_box.x = 0;
     #endif
-        int tex_upd = SDL_UpdateTexture(tex, NULL, (void*)u32Pixels, 4*WIDTH);        
+        //printf("Uipdate the texture with new calculated pixels.\n");
+        int tex_upd = SDL_UpdateTexture(tex, NULL, (void *)au32Pixels, 4*WIDTH);
         if (tex_upd != 0)
         {
             SDL_DestroyRenderer(ren);
@@ -361,26 +436,40 @@ int main(int argc, char *argv[])
             SDL_Quit();
             return(-1);
         }
+        //printf("RenderClear.\n");
         SDL_RenderClear(ren);
         /* Draw the texture */
+        //printf("RenderCopy.\n");
         SDL_RenderCopy(ren, tex, NULL, NULL);
         /* Draw the bounding box */
     #if defined(USE_BOUNDING_BOX)
         SDL_RenderDrawRect(ren, &bounding_box);
     #endif
         /* Update the screen */
+        //printf("RenderPresent.\n");
         SDL_RenderPresent(ren);
    
     } /* End of while(!done) */
-
-    #if defined(USE_YUV2)
-    //free(u8YPlane);
-    //free(u8UPlane);
-    //free(u8VPlane);
+#if defined(SAVE_RGB_FILE)
+                sprintf(out_name, "images/RGB.ppm");
+                fout = fopen(out_name, "w");
+                if (!fout) {
+                        perror("Cannot open image");
+                        exit(EXIT_FAILURE);
+                }
+                fprintf(fout, "P6\n%d %d 255\n", WIDTH, HEIGHT);
+                fwrite(au8RGBPixels, (WIDTH*HEIGHT*3), 1, fout);
+                fclose(fout);
+#endif /* SAVE_RGB_FILE */
+    #if defined(USE_YUV2_PLANAR)
+   // free(u8YPlane);
+   // free(u8UPlane);
+   // free(u8VPlane);
     #endif
     vCaptureClose();
     vSDL_Close();
     
     return 0;
 }
-// gcc -std=c99 -g -Wall display_jpg.c ann_file_ops.c -o display_jpg -D_REENTRANT -I. -I/usr/include/SDL2 -lSDL2 -lSDL2_image
+//cc -std=c99 -g -Wall stream_texture_capture.c ann_file_ops.c -o stream_texture_capture -D _REENTRANT -I. -I/usr/include -lSDL2 -lSDL2_image -D __KERNEL__ -fopenmp
+
