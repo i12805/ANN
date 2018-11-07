@@ -169,7 +169,6 @@ int main(int argc, char *argv[])
          {
              bounding_box.x += 1;
          }
-         printf("(%d, %d)\n", bounding_box.x, bounding_box.y);
      } 
      SDL_RenderDrawRect(ren, &bounding_box);
      /* Update the screen */

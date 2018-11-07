@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <SDL2/SDL.h>
+#include "arm_compute/runtime/NEON/NEFunctions.h"
+#include "arm_compute/core/Types.h"
 
 #define WIDTH 320
 #define HEIGHT 240
